@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { HttpMethod } from "@airlock/shared-types";
-import { requireJwtAuth } from "../middleware/auth.js";
+import { jwtUserId, requireJwtAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/authorize.js";
+import { recordAudit } from "../audit/recordAudit.js";
 import { withTenantScope } from "../db/client.js";
 import { createRoute, deleteRoute, findRouteById, listRoutes, updateRoute } from "../db/routes.repo.js";
 import { invalidateRouteCache } from "../redis/cache.js";
@@ -44,6 +45,7 @@ routesRouter.post("/", requireJwtAuth, requireRole("admin"), async (req, res, ne
   try {
     const scope = withTenantScope(req.auth!.tenantId);
     const route = await createRoute(scope, parsed.data);
+    recordAudit(req.auth!.tenantId, jwtUserId(req), "route.created", "route", route.id, parsed.data);
     res.status(201).json(route);
   } catch (err) {
     next(err);
@@ -82,6 +84,7 @@ routesRouter.patch("/:id", requireJwtAuth, requireRole("admin"), async (req, res
     // Stand-in for the future event-driven "route.updated" cache invalidation
     // (§17.3/§18.1) — synchronous for now since BullMQ doesn't exist until Phase 3.
     await invalidateRouteCache(scope.tenantId, route.id);
+    recordAudit(req.auth!.tenantId, jwtUserId(req), "route.updated", "route", route.id, parsed.data);
     res.status(200).json(route);
   } catch (err) {
     next(err);
@@ -90,10 +93,12 @@ routesRouter.patch("/:id", requireJwtAuth, requireRole("admin"), async (req, res
 
 routesRouter.delete("/:id", requireJwtAuth, requireRole("admin"), async (req, res) => {
   const scope = withTenantScope(req.auth!.tenantId);
-  const deleted = await deleteRoute(scope, paramString(req.params.id));
+  const routeId = paramString(req.params.id);
+  const deleted = await deleteRoute(scope, routeId);
   if (!deleted) {
     res.status(404).json({ error: "not_found" });
     return;
   }
+  recordAudit(req.auth!.tenantId, jwtUserId(req), "route.deleted", "route", routeId);
   res.status(204).send();
 });

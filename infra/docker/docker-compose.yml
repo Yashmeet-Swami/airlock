@@ -67,6 +67,11 @@ services:
       RATE_LIMIT_FALLBACK_LIMIT: "60"
       RATE_LIMIT_FALLBACK_WINDOW_S: "60"
       OPENSEARCH_URL: http://opensearch:9200
+      CIRCUIT_BREAKER_WINDOW_SIZE: "20"
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD_PCT: "50"
+      CIRCUIT_BREAKER_COOLDOWN_MS: "30000"
+      PROXY_MAX_RETRIES: "2"
+      PROXY_RETRY_BASE_MS: "100"
     ports:
       - "3000:3000"
     depends_on:
@@ -77,7 +82,7 @@ services:
       opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health/liveness"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -97,6 +102,9 @@ services:
       WEBHOOK_BACKOFF_MS: "1000,5000,30000,120000,600000"
       OPENSEARCH_URL: http://opensearch:9200
       LOG_INDEXER_CONCURRENCY: "10"
+      METRICS_PORT: "3001"
+    ports:
+      - "3001:3001"
     depends_on:
       # Gateway owns running migrations on startup; its healthcheck only passes
       # once that's done, which is the signal workers needs that the schema is ready.
@@ -116,6 +124,31 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3300:3000"
+    depends_on:
+      - prometheus
 
 volumes:
   airlock_pgdata:

@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { ApiKeyScope } from "@airlock/shared-types";
-import { requireJwtAuth } from "../middleware/auth.js";
+import { jwtUserId, requireJwtAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/authorize.js";
+import { recordAudit } from "../audit/recordAudit.js";
 import { withTenantScope } from "../db/client.js";
 import { createApiKey, listApiKeys, revokeApiKey } from "../db/apiKeys.repo.js";
 import { invalidateApiKeyCache } from "../redis/apiKeyCache.js";
@@ -27,6 +28,9 @@ apiKeysRouter.post("/", requireJwtAuth, requireRole("admin"), async (req, res) =
   const rawKey = `gk_live_${generateRawSecret()}`;
   const scope = withTenantScope(req.auth!.tenantId);
   const apiKey = await createApiKey(scope, sha256Hex(rawKey), parsed.data.scopes);
+  recordAudit(req.auth!.tenantId, jwtUserId(req), "apikey.created", "api_key", apiKey.id, {
+    scopes: parsed.data.scopes,
+  });
 
   // The raw key is returned exactly once and is never recoverable again (§13.2).
   res.status(201).json({ ...apiKey, rawKey });
@@ -47,5 +51,6 @@ apiKeysRouter.delete("/:id", requireJwtAuth, requireRole("admin"), async (req, r
   }
   // Immediate cache-bust so revocation isn't bounded by the 60s apikey cache TTL (§13.4).
   await invalidateApiKeyCache(revoked.keyHash);
+  recordAudit(req.auth!.tenantId, jwtUserId(req), "apikey.revoked", "api_key", revoked.apiKey.id);
   res.status(200).json(revoked.apiKey);
 });

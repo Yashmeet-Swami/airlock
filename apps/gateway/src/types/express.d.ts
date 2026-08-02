@@ -1,13 +1,13 @@
 import type { ApiKeyScope, UserRole } from "@airlock/shared-types";
 
-type JwtAuth = {
+export type JwtAuth = {
   type: "jwt";
   userId: string;
   tenantId: string;
   role: UserRole;
 };
 
-type ApiKeyAuth = {
+export type ApiKeyAuth = {
   type: "apikey";
   apiKeyId: string;
   tenantId: string;

@@ -1,13 +1,29 @@
 import { Router } from "express";
 import type { HttpMethod } from "@airlock/shared-types";
+import { env } from "../config/env.js";
 import { verifyApiKey } from "../middleware/auth.js";
 import { publishEvent } from "../events/publisher.js";
 import { publishRequestEvent } from "../events/requestLogger.js";
+import {
+  cacheHitsTotal,
+  cacheMissesTotal,
+  circuitBreakerState,
+  rateLimitRejectionsTotal,
+  requestDurationMs,
+  requestsTotal,
+} from "../observability/metrics.js";
+import { checkBreaker, recordBreakerResult } from "../redis/circuitBreaker.js";
 import { getCachedResponse, setCachedResponse } from "../redis/cache.js";
 import { checkRateLimit } from "../redis/rateLimit.js";
 import { sha256Hex } from "../security/hash.js";
 import { forwardRequest } from "./forwarder.js";
 import { resolveProxyTarget } from "./router.js";
+
+const BREAKER_STATE_VALUES: Record<"closed" | "half_open" | "open", number> = {
+  closed: 0,
+  half_open: 1,
+  open: 2,
+};
 
 export const proxyRouter = Router();
 
@@ -82,6 +98,8 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
     };
     publishEvent(tenant.id, "rate_limit.exceeded", rateLimitPayload);
     publishRequestEvent("rate_limit.exceeded", { ...baseLogFields, ...rateLimitPayload });
+    rateLimitRejectionsTotal.inc({ route: route.pathPattern });
+    requestsTotal.inc({ method, route: route.pathPattern, status_code: "429" });
     res.status(429).json({ error: "rate_limit_exceeded", retryAfterSeconds: rateLimit.retryAfterS });
     return;
   }
@@ -91,6 +109,7 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
   if (cacheable) {
     const cached = await getCachedResponse(tenant.id, route.id, method, subPath, search);
     if (cached) {
+      cacheHitsTotal.inc({ route: route.pathPattern });
       res.setHeader("X-Cache", "HIT");
       res.status(cached.status);
       for (const [key, value] of Object.entries(cached.headers)) res.setHeader(key, value);
@@ -103,11 +122,43 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
         cacheHit: true,
         upstream: route.upstreamUrl,
       });
+      requestsTotal.inc({ method, route: route.pathPattern, status_code: String(cached.status) });
+      requestDurationMs.observe({ method, route: route.pathPattern }, Date.now() - startedAt);
       return;
     }
+    cacheMissesTotal.inc({ route: route.pathPattern });
+  }
+
+  // §16.1: the breaker gates the whole upstream origin, not just this route —
+  // several routes can share a backend, and one route's outage shouldn't need
+  // to be independently rediscovered per route.
+  const upstreamOrigin = new URL(route.upstreamUrl).origin;
+  const breakerDecision = await checkBreaker(upstreamOrigin);
+  if (!breakerDecision.allowed) {
+    publishRequestEvent("request.failed", {
+      ...baseLogFields,
+      error: "circuit_open",
+      upstream: route.upstreamUrl,
+    });
+    requestsTotal.inc({ method, route: route.pathPattern, status_code: "503" });
+    res.status(503).json({ error: "circuit_open" });
+    return;
   }
 
   const result = await forwardRequest(route.upstreamUrl, subPath, search, method, req.headers, req.body);
+
+  const breakerSuccess = result.kind !== "network_error" && result.status < 500;
+  const breakerState = await recordBreakerResult(upstreamOrigin, breakerSuccess);
+  circuitBreakerState.set({ upstream_origin: upstreamOrigin }, BREAKER_STATE_VALUES[breakerState]);
+  // checkBreaker only lets a request through when the breaker was closed or
+  // acting as the single half-open probe — so "open" here always means this
+  // call is the one that just tripped it, never a stale read.
+  if (breakerState === "open") {
+    publishEvent(tenant.id, "breaker.opened", {
+      upstreamOrigin,
+      failureRate: env.CIRCUIT_BREAKER_FAILURE_THRESHOLD_PCT,
+    });
+  }
 
   if (cacheable && result.status >= 200 && result.status < 300) {
     await setCachedResponse(tenant.id, route.id, method, subPath, search, route.cacheTtlS, result);
@@ -117,6 +168,9 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
   res.status(result.status);
   for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
   res.json(result.body);
+
+  requestsTotal.inc({ method, route: route.pathPattern, status_code: String(result.status) });
+  requestDurationMs.observe({ method, route: route.pathPattern }, Date.now() - startedAt);
 
   if (result.kind === "network_error") {
     const body = result.body as { error?: string } | null;

@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireJwtAuth } from "../middleware/auth.js";
+import { jwtUserId, requireJwtAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/authorize.js";
+import { recordAudit } from "../audit/recordAudit.js";
 import { withTenantScope } from "../db/client.js";
 import { findRouteById } from "../db/routes.repo.js";
 import { invalidateRouteCache } from "../redis/cache.js";
@@ -28,5 +29,6 @@ cacheRouter.post("/invalidate", requireJwtAuth, requireRole("admin"), async (req
   }
 
   await invalidateRouteCache(scope.tenantId, route.id);
+  recordAudit(req.auth!.tenantId, jwtUserId(req), "cache.invalidated", "route", route.id);
   res.status(204).send();
 });

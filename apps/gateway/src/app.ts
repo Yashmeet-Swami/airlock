@@ -11,7 +11,10 @@ import { routesRouter } from "./admin/routes.controller.js";
 import { rateLimitPoliciesRouter } from "./admin/rateLimitPolicies.controller.js";
 import { cacheRouter } from "./admin/cache.controller.js";
 import { webhooksRouter } from "./admin/webhooks.controller.js";
+import { auditLogRouter } from "./admin/auditLog.controller.js";
 import { logsRouter } from "./analytics/logs.controller.js";
+import { healthRouter } from "./health/health.routes.js";
+import { registry } from "./observability/metrics.js";
 import { proxyRouter } from "./proxy/proxy.routes.js";
 import { openApiDocument } from "./openapi/document.js";
 
@@ -27,10 +30,13 @@ export function createApp() {
   app.use(correlationId);
   app.use(express.json());
 
-  // Ahead of the real Phase 5 liveness/readiness split (§20.3) — just enough
-  // for docker-compose to have something to healthcheck against.
-  app.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok" });
+  app.use("/health", healthRouter);
+
+  // Unauthenticated (§22.1) — scraped from inside the docker network, never
+  // exposed publicly.
+  app.get("/metrics", async (_req, res) => {
+    res.setHeader("content-type", registry.contentType);
+    res.status(200).send(await registry.metrics());
   });
 
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
@@ -45,6 +51,7 @@ export function createApp() {
   app.use("/admin/rate-limit-policies", rateLimitPoliciesRouter);
   app.use("/admin/cache", cacheRouter);
   app.use("/admin/webhooks", webhooksRouter);
+  app.use("/admin/audit-log", auditLogRouter);
   app.use("/logs", logsRouter);
   app.use("/proxy", proxyRouter);
 

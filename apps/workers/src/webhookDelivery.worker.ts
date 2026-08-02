@@ -5,6 +5,7 @@ import { bullmqConnection } from "./redis/bullmqConnection.js";
 import { findWebhookById, recordDeliveryFailure, recordDeliverySuccess } from "./db/webhooks.repo.js";
 import { signPayload } from "./security/hmac.js";
 import { logger } from "./observability/logger.js";
+import { webhookDeliveryDurationMs, webhookDlqTotal } from "./observability/metrics.js";
 
 // Used to schedule the next self-managed retry (see below) — a second Queue
 // instance on the same queue name, distinct from the Worker that consumes it.
@@ -20,10 +21,13 @@ function backoffDelayMs(attemptNumber: number): number {
 
 async function processJob(job: Job<WebhookDeliveryJobData>): Promise<void> {
   const { deliveryId, webhookId, eventId, eventName, payload, attemptNumber } = job.data;
+  const startedAt = Date.now();
 
   const webhook = await findWebhookById(webhookId);
   if (!webhook || !webhook.active) {
     await recordDeliveryFailure(deliveryId, "webhook not found or inactive", true);
+    webhookDlqTotal.inc();
+    webhookDeliveryDurationMs.observe({ outcome: "failed" }, Date.now() - startedAt);
     return;
   }
 
@@ -45,6 +49,7 @@ async function processJob(job: Job<WebhookDeliveryJobData>): Promise<void> {
 
     if (response.ok) {
       await recordDeliverySuccess(deliveryId);
+      webhookDeliveryDurationMs.observe({ outcome: "success" }, Date.now() - startedAt);
       return;
     }
     throw new Error(`upstream responded ${response.status}`);
@@ -52,6 +57,8 @@ async function processJob(job: Job<WebhookDeliveryJobData>): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     const isFinal = attemptNumber >= env.WEBHOOK_MAX_ATTEMPTS;
     await recordDeliveryFailure(deliveryId, message, isFinal);
+    webhookDeliveryDurationMs.observe({ outcome: "failed" }, Date.now() - startedAt);
+    if (isFinal) webhookDlqTotal.inc();
 
     // Retries are scheduled explicitly via a delayed re-add, not BullMQ's own
     // attempts/backoff (see Phase 3 plan) — so the error is swallowed here

@@ -147,6 +147,11 @@ export async function setup(): Promise<void> {
   process.env.JWT_ACCESS_SECRET ??= "test-access-secret";
   process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret";
   process.env.LOG_LEVEL ??= "silent";
+  // Small window/short cooldown/short backoff so breaker + retry tests don't
+  // need dozens of real requests or multi-second waits to exercise (§16.1/§16.2).
+  process.env.CIRCUIT_BREAKER_WINDOW_SIZE ??= "4";
+  process.env.CIRCUIT_BREAKER_COOLDOWN_MS ??= "300";
+  process.env.PROXY_RETRY_BASE_MS ??= "20";
 
   await Promise.all([waitForPostgres(), waitForRedis(), waitForOpenSearch()]);
 

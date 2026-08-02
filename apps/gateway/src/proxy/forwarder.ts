@@ -9,6 +9,7 @@ export interface ForwardResult {
    *  Lets the caller emit request.completed vs request.failed without
    *  guessing from magic status codes an upstream could legitimately return too. */
   kind: "response" | "network_error";
+  attempts: number;
 }
 
 const HOP_BY_HOP_HEADERS = new Set([
@@ -22,9 +23,59 @@ const HOP_BY_HOP_HEADERS = new Set([
   "authorization",
 ]);
 
+const IDEMPOTENT_METHODS = new Set(["GET", "PUT", "DELETE"]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function attemptOnce(
+  target: URL,
+  method: string,
+  headers: Headers,
+  bodyText: string | undefined,
+): Promise<ForwardResult> {
+  try {
+    const response = await fetch(target, {
+      method,
+      headers,
+      body: bodyText,
+      signal: AbortSignal.timeout(env.PROXY_UPSTREAM_TIMEOUT_MS),
+    });
+
+    const responseHeaders: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) responseHeaders[key] = value;
+    });
+
+    const contentType = response.headers.get("content-type") ?? "";
+    const responseBody = contentType.includes("application/json")
+      ? await response.json().catch(() => null)
+      : await response.text();
+
+    return { status: response.status, headers: responseHeaders, body: responseBody, kind: "response", attempts: 1 };
+  } catch (err) {
+    const isTimeout = err instanceof Error && err.name === "TimeoutError";
+    return {
+      status: isTimeout ? 504 : 502,
+      headers: {},
+      body: { error: isTimeout ? "upstream_timeout" : "upstream_unreachable" },
+      kind: "network_error",
+      attempts: 1,
+    };
+  }
+}
+
+function isRetryableFailure(result: ForwardResult): boolean {
+  return result.kind === "network_error" || result.status >= 500;
+}
+
 /**
- * Single-attempt forward with a timeout — no retries/circuit-breaker yet
- * (those land in Phase 5/16). Failures are mapped to 502/504 for the caller.
+ * Retries (§16.2): up to env.PROXY_MAX_RETRIES additional attempts, exponential
+ * backoff + jitter, gated to idempotent methods (GET/PUT/DELETE) or a caller-
+ * supplied Idempotency-Key — POST is never silently retried, avoiding duplicate
+ * side effects on the upstream. Independent of circuit-breaker state, which the
+ * caller checks/records separately around this call.
  */
 export async function forwardRequest(
   upstreamUrl: string,
@@ -44,33 +95,20 @@ export async function forwardRequest(
 
   const hasBody = body !== undefined && method !== "GET" && method !== "HEAD";
   if (hasBody) headers.set("content-type", "application/json");
+  const bodyText = hasBody ? JSON.stringify(body) : undefined;
 
-  try {
-    const response = await fetch(target, {
-      method,
-      headers,
-      body: hasBody ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(env.PROXY_UPSTREAM_TIMEOUT_MS),
-    });
+  const canRetry = IDEMPOTENT_METHODS.has(method) || Boolean(incomingHeaders["idempotency-key"]);
+  const maxAttempts = canRetry ? env.PROXY_MAX_RETRIES + 1 : 1;
 
-    const responseHeaders: Record<string, string> = {};
-    response.headers.forEach((value, key) => {
-      if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) responseHeaders[key] = value;
-    });
+  let result = await attemptOnce(target, method, headers, bodyText);
+  let attempt = 1;
 
-    const contentType = response.headers.get("content-type") ?? "";
-    const responseBody = contentType.includes("application/json")
-      ? await response.json().catch(() => null)
-      : await response.text();
-
-    return { status: response.status, headers: responseHeaders, body: responseBody, kind: "response" };
-  } catch (err) {
-    const isTimeout = err instanceof Error && err.name === "TimeoutError";
-    return {
-      status: isTimeout ? 504 : 502,
-      headers: {},
-      body: { error: isTimeout ? "upstream_timeout" : "upstream_unreachable" },
-      kind: "network_error",
-    };
+  while (isRetryableFailure(result) && attempt < maxAttempts) {
+    const backoff = env.PROXY_RETRY_BASE_MS * 2 ** (attempt - 1) + Math.random() * env.PROXY_RETRY_BASE_MS;
+    await sleep(backoff);
+    result = await attemptOnce(target, method, headers, bodyText);
+    attempt += 1;
   }
+
+  return { ...result, attempts: attempt };
 }

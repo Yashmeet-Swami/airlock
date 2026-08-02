@@ -24,6 +24,15 @@ const envSchema = z.object({
   RATE_LIMIT_FALLBACK_LIMIT: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_FALLBACK_WINDOW_S: z.coerce.number().int().positive().default(60),
   OPENSEARCH_URL: z.string().min(1, "OPENSEARCH_URL is required"),
+  // §16.1: opens past a 50% failure rate over the last 20 requests, half-opens
+  // after a 30s cooldown. Env-configurable so tests don't need 20 real failures.
+  CIRCUIT_BREAKER_WINDOW_SIZE: z.coerce.number().int().positive().default(20),
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD_PCT: z.coerce.number().positive().default(50),
+  CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().positive().default(30000),
+  // §16.2: 2 retries (3 attempts total), only for idempotent methods or when
+  // the caller supplies Idempotency-Key.
+  PROXY_MAX_RETRIES: z.coerce.number().int().min(0).default(2),
+  PROXY_RETRY_BASE_MS: z.coerce.number().int().positive().default(100),
 });
 
 const parsed = envSchema.safeParse(process.env);

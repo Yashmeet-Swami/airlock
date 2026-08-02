@@ -5,7 +5,7 @@
  * the rest arrive alongside the phases that actually consume them (see the
  * Phase 3 plan's scope decision #1).
  */
-export type WebhookEventName = "rate_limit.exceeded";
+export type WebhookEventName = "rate_limit.exceeded" | "breaker.opened";
 
 export interface RateLimitExceededPayload {
   routeId: string;
@@ -13,8 +13,14 @@ export interface RateLimitExceededPayload {
   current: number;
 }
 
+export interface BreakerOpenedPayload {
+  upstreamOrigin: string;
+  failureRate: number;
+}
+
 export interface EventPayloadMap {
   "rate_limit.exceeded": RateLimitExceededPayload;
+  "breaker.opened": BreakerOpenedPayload;
 }
 
 export const QUEUE_NAMES = {

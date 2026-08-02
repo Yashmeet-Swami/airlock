@@ -178,6 +178,15 @@ registry.registerPath({
   responses: { 202: { description: "Re-queued" }, 404: errorResponse },
 });
 
+registry.registerPath({
+  method: "get",
+  path: "/admin/audit-log",
+  tags: ["Audit"],
+  summary: "List recent admin-mutation audit entries for the caller's tenant",
+  security: bearerSecurity,
+  responses: { 200: { description: "Audit log entries" }, 400: errorResponse },
+});
+
 const bearerOrApiKeySecurity: Record<string, string[]>[] = [{ BearerAuth: [] }, { ApiKeyAuth: [] }];
 
 registry.registerPath({

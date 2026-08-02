@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireJwtAuth } from "../middleware/auth.js";
+import { jwtUserId, requireJwtAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/authorize.js";
+import { recordAudit } from "../audit/recordAudit.js";
 import { withTenantScope } from "../db/client.js";
 import { createPolicy, deletePolicy, listPolicies } from "../db/rateLimitPolicies.repo.js";
 import { paramString } from "../utils/params.js";
@@ -22,6 +23,7 @@ rateLimitPoliciesRouter.post("/", requireJwtAuth, requireRole("admin"), async (r
   }
   const scope = withTenantScope(req.auth!.tenantId);
   const policy = await createPolicy(scope, parsed.data);
+  recordAudit(req.auth!.tenantId, jwtUserId(req), "rate_limit_policy.created", "rate_limit_policy", policy.id, parsed.data);
   res.status(201).json(policy);
 });
 
@@ -33,10 +35,12 @@ rateLimitPoliciesRouter.get("/", requireJwtAuth, requireRole("viewer"), async (r
 
 rateLimitPoliciesRouter.delete("/:id", requireJwtAuth, requireRole("admin"), async (req, res) => {
   const scope = withTenantScope(req.auth!.tenantId);
-  const deleted = await deletePolicy(scope, paramString(req.params.id));
+  const policyId = paramString(req.params.id);
+  const deleted = await deletePolicy(scope, policyId);
   if (!deleted) {
     res.status(404).json({ error: "not_found" });
     return;
   }
+  recordAudit(req.auth!.tenantId, jwtUserId(req), "rate_limit_policy.deleted", "rate_limit_policy", policyId);
   res.status(204).send();
 });

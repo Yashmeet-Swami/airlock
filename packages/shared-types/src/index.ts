@@ -4,5 +4,6 @@ export * from "./dto/apiKey.js";
 export * from "./dto/route.js";
 export * from "./dto/rateLimitPolicy.js";
 export * from "./dto/webhook.js";
+export * from "./dto/auditLog.js";
 export * from "./events.js";
 export * from "./opensearch.js";

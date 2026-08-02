@@ -4,6 +4,13 @@ import { findApiKeyByHash, touchLastUsed } from "../db/apiKeys.repo.js";
 import { getCachedApiKeyAuth, setCachedApiKeyAuth } from "../redis/apiKeyCache.js";
 import { sha256Hex } from "../security/hash.js";
 import { verifyAccessToken } from "../security/jwt.js";
+import type { JwtAuth } from "../types/express.js";
+
+/** Safe only behind requireJwtAuth/requireRole, both of which reject anything
+ *  that isn't a jwt-typed req.auth before a handler ever runs. */
+export function jwtUserId(req: Request): string {
+  return (req.auth as JwtAuth).userId;
+}
 
 /** Verifies the admin/dashboard JWT (Authorization: Bearer <token>) and attaches req.auth. */
 export function requireJwtAuth(req: Request, res: Response, next: NextFunction): void {

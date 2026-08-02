@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireJwtAuth } from "../middleware/auth.js";
+import { jwtUserId, requireJwtAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/authorize.js";
+import { recordAudit } from "../audit/recordAudit.js";
 import { deleteTenant, findTenantById, updateTenantName } from "../db/tenants.repo.js";
 import { paramString } from "../utils/params.js";
 
@@ -37,6 +38,7 @@ tenantsRouter.patch("/:id", requireJwtAuth, requireRole("admin"), async (req, re
     return;
   }
   const tenant = await updateTenantName(req.auth!.tenantId, parsed.data.name);
+  recordAudit(req.auth!.tenantId, jwtUserId(req), "tenant.updated", "tenant", req.auth!.tenantId, parsed.data);
   res.status(200).json(tenant);
 });
 
@@ -45,6 +47,9 @@ tenantsRouter.delete("/:id", requireJwtAuth, requireRole("owner"), async (req, r
     res.status(404).json({ error: "not_found" });
     return;
   }
+  // No recordAudit here: audit_log FKs to tenants(id) ON DELETE CASCADE, so an
+  // entry for "the tenant that just got deleted" would itself be deleted by
+  // the same cascade — there's nowhere left to read it from.
   await deleteTenant(req.auth!.tenantId);
   res.status(204).send();
 });

@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { WebhookDeliveryJobData, WebhookDeliveryStatus, WebhookEventName } from "@airlock/shared-types";
-import { requireJwtAuth } from "../middleware/auth.js";
+import { jwtUserId, requireJwtAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/authorize.js";
+import { recordAudit } from "../audit/recordAudit.js";
 import { withTenantScope } from "../db/client.js";
 import { createWebhook, deleteWebhook, findWebhookById, listWebhooks } from "../db/webhooks.repo.js";
 import { findDeliveryById, listDeliveries, resetForReplay } from "../db/webhookDeliveries.repo.js";
@@ -12,7 +13,7 @@ import { paramString } from "../utils/params.js";
 
 export const webhooksRouter = Router();
 
-const EVENT_NAMES: [WebhookEventName, ...WebhookEventName[]] = ["rate_limit.exceeded"];
+const EVENT_NAMES: [WebhookEventName, ...WebhookEventName[]] = ["rate_limit.exceeded", "breaker.opened"];
 const DELIVERY_STATUSES: [WebhookDeliveryStatus, ...WebhookDeliveryStatus[]] = [
   "queued",
   "retrying",
@@ -35,6 +36,10 @@ webhooksRouter.post("/", requireJwtAuth, requireRole("admin"), async (req, res) 
   const scope = withTenantScope(req.auth!.tenantId);
   const secret = generateRawSecret();
   const webhook = await createWebhook(scope, parsed.data.url, parsed.data.events, secret);
+  recordAudit(req.auth!.tenantId, jwtUserId(req), "webhook.created", "webhook", webhook.id, {
+    url: parsed.data.url,
+    events: parsed.data.events,
+  });
   res.status(201).json(webhook);
 });
 
@@ -46,11 +51,13 @@ webhooksRouter.get("/", requireJwtAuth, requireRole("viewer"), async (req, res) 
 
 webhooksRouter.delete("/:id", requireJwtAuth, requireRole("admin"), async (req, res) => {
   const scope = withTenantScope(req.auth!.tenantId);
-  const deleted = await deleteWebhook(scope, paramString(req.params.id));
+  const webhookId = paramString(req.params.id);
+  const deleted = await deleteWebhook(scope, webhookId);
   if (!deleted) {
     res.status(404).json({ error: "not_found" });
     return;
   }
+  recordAudit(req.auth!.tenantId, jwtUserId(req), "webhook.deleted", "webhook", webhookId);
   res.status(204).send();
 });
 
