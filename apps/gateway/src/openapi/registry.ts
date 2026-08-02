@@ -141,6 +141,44 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/admin/webhooks",
+  tags: ["Webhooks"],
+  summary: "Register a webhook subscription (HMAC secret returned, visible indefinitely)",
+  security: bearerSecurity,
+  responses: { 201: { description: "Webhook created" }, 400: errorResponse },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/admin/webhooks",
+  tags: ["Webhooks"],
+  summary: "List webhook subscriptions for the caller's tenant",
+  security: bearerSecurity,
+  responses: { 200: { description: "Webhooks" } },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/admin/webhooks/{id}/deliveries",
+  tags: ["Webhooks"],
+  summary: "List delivery attempts for a webhook (optionally filtered by status)",
+  security: bearerSecurity,
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: { description: "Deliveries" }, 404: errorResponse },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/admin/webhooks/deliveries/{id}/replay",
+  tags: ["Webhooks"],
+  summary: "Manually replay a dead-lettered (or any) delivery (§10.5)",
+  security: bearerSecurity,
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 202: { description: "Re-queued" }, 404: errorResponse },
+});
+
+registry.registerPath({
   method: "get",
   path: "/proxy/{tenantSlug}/{path}",
   tags: ["Proxy"],

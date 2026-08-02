@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { HttpMethod } from "@airlock/shared-types";
 import { verifyApiKey } from "../middleware/auth.js";
+import { publishEvent } from "../events/publisher.js";
 import { getCachedResponse, setCachedResponse } from "../redis/cache.js";
 import { checkRateLimit } from "../redis/rateLimit.js";
 import { forwardRequest } from "./forwarder.js";
@@ -63,6 +64,11 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
   res.setHeader("X-RateLimit-Remaining", String(rateLimit.remaining));
   if (!rateLimit.allowed) {
     res.setHeader("Retry-After", String(rateLimit.retryAfterS));
+    publishEvent(tenant.id, "rate_limit.exceeded", {
+      routeId: route.id,
+      limit: rateLimit.limit,
+      current: rateLimit.limit - rateLimit.remaining,
+    });
     res.status(429).json({ error: "rate_limit_exceeded", retryAfterSeconds: rateLimit.retryAfterS });
     return;
   }

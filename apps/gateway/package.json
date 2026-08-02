@@ -17,6 +17,7 @@
     "@airlock/shared-types": "*",
     "@asteasolutions/zod-to-openapi": "^7.3.0",
     "bcrypt": "^6.0.0",
+    "bullmq": "^5.34.10",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.0.1",

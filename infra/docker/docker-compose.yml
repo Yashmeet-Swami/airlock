@@ -65,5 +65,24 @@ services:
       timeout: 5s
       retries: 10
 
+  workers:
+    build:
+      context: ../..
+      dockerfile: apps/workers/Dockerfile
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://airlock:airlock@postgres:5432/airlock
+      REDIS_URL: redis://redis:6379
+      WEBHOOK_DELIVERY_TIMEOUT_MS: "5000"
+      WEBHOOK_CONCURRENCY: "5"
+      WEBHOOK_MAX_ATTEMPTS: "5"
+      WEBHOOK_BACKOFF_MS: "1000,5000,30000,120000,600000"
+    depends_on:
+      # Gateway owns running migrations on startup; its healthcheck only passes
+      # once that's done, which is the signal workers needs that the schema is ready.
+      gateway:
+        condition: service_healthy
+
 volumes:
   airlock_pgdata:
