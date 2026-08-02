@@ -8,6 +8,8 @@ import { authErrorHandler, authRouter } from "./auth/auth.routes.js";
 import { tenantsRouter } from "./admin/tenants.controller.js";
 import { apiKeysRouter } from "./admin/apiKeys.controller.js";
 import { routesRouter } from "./admin/routes.controller.js";
+import { rateLimitPoliciesRouter } from "./admin/rateLimitPolicies.controller.js";
+import { cacheRouter } from "./admin/cache.controller.js";
 import { proxyRouter } from "./proxy/proxy.routes.js";
 import { openApiDocument } from "./openapi/document.js";
 
@@ -38,6 +40,8 @@ export function createApp() {
   app.use("/admin/tenants", tenantsRouter);
   app.use("/admin/routes", routesRouter);
   app.use("/admin/api-keys", apiKeysRouter);
+  app.use("/admin/rate-limit-policies", rateLimitPoliciesRouter);
+  app.use("/admin/cache", cacheRouter);
   app.use("/proxy", proxyRouter);
 
   app.use((_req, res) => {

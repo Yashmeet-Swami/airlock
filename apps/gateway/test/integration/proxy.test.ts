@@ -61,6 +61,20 @@ describe("proxy", () => {
     expect(res.status).toBe(401);
   });
 
+  it("rejects a revoked API key immediately even after it was cached in Redis (§13.4)", async () => {
+    const { accessToken, rawKey, apiKeyId } = await setUpTenant("acme-corp", "owner@acme.test");
+
+    // Populate the apikey:{hash} Redis cache with a valid result.
+    const firstCall = await request(app).get("/proxy/acme-corp/echo").set("X-API-Key", rawKey);
+    expect(firstCall.status).toBe(200);
+
+    await request(app).delete(`/admin/api-keys/${apiKeyId}`).set("Authorization", `Bearer ${accessToken}`);
+
+    // Without cache-busting on revoke this would incorrectly succeed for up to 60s.
+    const secondCall = await request(app).get("/proxy/acme-corp/echo").set("X-API-Key", rawKey);
+    expect(secondCall.status).toBe(401);
+  });
+
   it("rejects an unknown tenant slug", async () => {
     const { rawKey } = await setUpTenant("acme-corp", "owner@acme.test");
     const res = await request(app).get("/proxy/does-not-exist/echo").set("X-API-Key", rawKey);

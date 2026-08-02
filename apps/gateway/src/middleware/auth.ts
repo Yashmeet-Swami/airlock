@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { ApiKeyScope } from "@airlock/shared-types";
 import { findApiKeyByHash, touchLastUsed } from "../db/apiKeys.repo.js";
+import { getCachedApiKeyAuth, setCachedApiKeyAuth } from "../redis/apiKeyCache.js";
 import { sha256Hex } from "../security/hash.js";
 import { verifyAccessToken } from "../security/jwt.js";
 
@@ -30,12 +31,25 @@ export interface ApiKeyAuthResult {
 
 /** Express-agnostic lookup, reused by both requireApiKeyAuth and the proxy handler
  *  (which needs to decide, per-route, whether auth applies at all before it can
- *  invoke a fixed middleware chain). */
+ *  invoke a fixed middleware chain). Cache-aside against Redis (`apikey:{hash}`,
+ *  60s TTL, §9.1) so the hot proxy path doesn't hit Postgres on every request;
+ *  revocation busts the cache entry immediately rather than waiting out the TTL. */
 export async function verifyApiKey(rawKey: string): Promise<ApiKeyAuthResult | null> {
-  const apiKey = await findApiKeyByHash(sha256Hex(rawKey));
+  const keyHash = sha256Hex(rawKey);
+
+  const cached = await getCachedApiKeyAuth(keyHash);
+  if (cached) {
+    void touchLastUsed(cached.apiKeyId);
+    return cached;
+  }
+
+  const apiKey = await findApiKeyByHash(keyHash);
   if (!apiKey) return null;
+
+  const result: ApiKeyAuthResult = { apiKeyId: apiKey.id, tenantId: apiKey.tenantId, scopes: apiKey.scopes };
+  await setCachedApiKeyAuth(keyHash, result);
   void touchLastUsed(apiKey.id);
-  return { apiKeyId: apiKey.id, tenantId: apiKey.tenantId, scopes: apiKey.scopes };
+  return result;
 }
 
 /** Verifies the machine X-API-Key header for statically-protected (non-proxy) routes. */

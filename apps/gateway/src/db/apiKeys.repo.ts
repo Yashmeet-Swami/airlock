@@ -35,12 +35,17 @@ export async function listApiKeys(scope: TenantScope): Promise<ApiKey[]> {
   return rows.map(toApiKey);
 }
 
-export async function revokeApiKey(scope: TenantScope, id: string): Promise<ApiKey | null> {
+/** Also returns the raw key_hash (not part of the public ApiKey DTO) so the
+ *  caller can bust the Redis apikey:{hash} cache entry immediately (§13.4). */
+export async function revokeApiKey(
+  scope: TenantScope,
+  id: string,
+): Promise<{ apiKey: ApiKey; keyHash: string } | null> {
   const { rows } = await scope.query<ApiKeyRow>(
     `UPDATE api_keys SET revoked_at = now() WHERE tenant_id = $1 AND id = $2 AND revoked_at IS NULL RETURNING *`,
     [scope.tenantId, id],
   );
-  return rows[0] ? toApiKey(rows[0]) : null;
+  return rows[0] ? { apiKey: toApiKey(rows[0]), keyHash: rows[0].key_hash } : null;
 }
 
 /** Unscoped: used at the proxy edge to resolve a raw API key's hash into its owning tenant + scopes. */

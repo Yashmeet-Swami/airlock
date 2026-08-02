@@ -5,6 +5,7 @@ import { requireJwtAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/authorize.js";
 import { withTenantScope } from "../db/client.js";
 import { createRoute, deleteRoute, findRouteById, listRoutes, updateRoute } from "../db/routes.repo.js";
+import { invalidateRouteCache } from "../redis/cache.js";
 import { paramString } from "../utils/params.js";
 
 export const routesRouter = Router();
@@ -78,6 +79,9 @@ routesRouter.patch("/:id", requireJwtAuth, requireRole("admin"), async (req, res
       res.status(404).json({ error: "not_found" });
       return;
     }
+    // Stand-in for the future event-driven "route.updated" cache invalidation
+    // (§17.3/§18.1) — synchronous for now since BullMQ doesn't exist until Phase 3.
+    await invalidateRouteCache(scope.tenantId, route.id);
     res.status(200).json(route);
   } catch (err) {
     next(err);

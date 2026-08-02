@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 
 export interface EchoServer {
   url: string;
+  callCount: () => number;
   close: () => Promise<void>;
 }
 
@@ -10,7 +11,9 @@ export interface EchoServer {
  *  integration tests don't depend on the separate mock-upstream container. */
 export function startEchoServer(): Promise<EchoServer> {
   return new Promise((resolve) => {
+    let calls = 0;
     const server = http.createServer((req, res) => {
+      calls += 1;
       let body = "";
       req.on("data", (chunk) => (body += chunk));
       req.on("end", () => {
@@ -23,6 +26,7 @@ export function startEchoServer(): Promise<EchoServer> {
       const { port } = server.address() as AddressInfo;
       resolve({
         url: `http://127.0.0.1:${port}`,
+        callCount: () => calls,
         close: () => new Promise((res) => server.close(() => res())),
       });
     });

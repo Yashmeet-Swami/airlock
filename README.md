@@ -10,9 +10,15 @@ full design doc, architecture, and phase-by-phase roadmap.
 tenant/user model, JWT admin auth with refresh rotation, API-key issuance, route
 CRUD, and OpenAPI/Swagger docs.
 
-Everything else (Redis caching/rate limiting, BullMQ workers/webhooks, OpenSearch
-log search, Prometheus/Grafana, circuit breaker, MinIO archival/replay) is future
-work per the phase plan.
+**Phase 2 — Redis: Caching & Rate Limiting** (blueprint §24.3) is implemented:
+atomic token-bucket rate limiting (Redis Lua script, per-route/tenant-wide/fallback
+policy resolution, `X-RateLimit-*`/`Retry-After` headers), cache-aside response
+caching (`X-Cache: HIT|MISS`, explicit `/admin/cache/invalidate` + automatic
+invalidation on route update), and a Redis-backed API-key validation cache with
+immediate revocation busting.
+
+Everything else (BullMQ workers/webhooks, OpenSearch log search, Prometheus/Grafana,
+circuit breaker, MinIO archival/replay) is future work per the phase plan.
 
 ## Quickstart
 
@@ -21,8 +27,8 @@ npm install
 npm run dev
 ```
 
-This brings up Postgres, the gateway, and a small `mock-upstream` fixture service
-via Docker Compose, running migrations automatically. Once healthy:
+This brings up Postgres, Redis, the gateway, and a small `mock-upstream` fixture
+service via Docker Compose, running migrations automatically. Once healthy:
 
 - Gateway: http://localhost:3000
 - Swagger UI: http://localhost:3000/docs
@@ -52,6 +58,15 @@ curl -s -X POST http://localhost:3000/admin/api-keys \
 
 # 4. Call the proxied route
 curl -s http://localhost:3000/proxy/acme-corp/v1/payments -H "X-API-Key: <rawKey>"
+
+# 5. (Phase 2) Set a tight rate limit and watch it kick in
+curl -s -X POST http://localhost:3000/admin/rate-limit-policies \
+  -H "Authorization: Bearer <accessToken>" -H "Content-Type: application/json" \
+  -d '{"routeId":"<routeId>","limitCount":3,"windowSeconds":10}'
+# hammer /proxy/acme-corp/v1/payments a few times — the 4th within the window gets 429 + Retry-After
+
+# 6. (Phase 2) Mark a route cacheable and see X-Cache flip from MISS to HIT
+curl -s -i http://localhost:3000/proxy/acme-corp/v1/payments | grep -i x-cache
 ```
 
 ## Development

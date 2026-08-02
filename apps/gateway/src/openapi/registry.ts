@@ -114,10 +114,42 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/admin/rate-limit-policies",
+  tags: ["Rate Limit Policies"],
+  summary: "Create a rate-limit policy (route-specific if routeId given, tenant-wide otherwise)",
+  security: bearerSecurity,
+  responses: { 201: { description: "Policy created" }, 400: errorResponse },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/admin/rate-limit-policies",
+  tags: ["Rate Limit Policies"],
+  summary: "List rate-limit policies for the caller's tenant",
+  security: bearerSecurity,
+  responses: { 200: { description: "Policies" } },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/admin/cache/invalidate",
+  tags: ["Cache"],
+  summary: "Explicitly invalidate all cached responses for a route (§17.3)",
+  security: bearerSecurity,
+  responses: { 204: { description: "Invalidated" }, 404: errorResponse },
+});
+
+registry.registerPath({
   method: "get",
   path: "/proxy/{tenantSlug}/{path}",
   tags: ["Proxy"],
   summary: "Proxy a request through to the tenant's configured upstream",
   security: [{ ApiKeyAuth: [] }],
-  responses: { 200: { description: "Upstream response" }, 401: errorResponse, 404: errorResponse },
+  responses: {
+    200: { description: "Upstream response (or cached response — see X-Cache header)" },
+    401: errorResponse,
+    404: errorResponse,
+    429: errorResponse,
+  },
 });

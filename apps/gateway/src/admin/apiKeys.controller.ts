@@ -5,6 +5,7 @@ import { requireJwtAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/authorize.js";
 import { withTenantScope } from "../db/client.js";
 import { createApiKey, listApiKeys, revokeApiKey } from "../db/apiKeys.repo.js";
+import { invalidateApiKeyCache } from "../redis/apiKeyCache.js";
 import { generateRawSecret, sha256Hex } from "../security/hash.js";
 import { paramString } from "../utils/params.js";
 
@@ -44,5 +45,7 @@ apiKeysRouter.delete("/:id", requireJwtAuth, requireRole("admin"), async (req, r
     res.status(404).json({ error: "not_found" });
     return;
   }
-  res.status(200).json(revoked);
+  // Immediate cache-bust so revocation isn't bounded by the 60s apikey cache TTL (§13.4).
+  await invalidateApiKeyCache(revoked.keyHash);
+  res.status(200).json(revoked.apiKey);
 });
