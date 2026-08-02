@@ -1,0 +1,21 @@
+{
+  "name": "@airlock/mock-upstream",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev/test fixture only — echoes requests so Phase 1 has a dummy upstream to proxy to.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

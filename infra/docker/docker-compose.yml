@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airlock
+      POSTGRES_PASSWORD: airlock
+      POSTGRES_DB: airlock
+    ports:
+      - "5432:5432"
+    volumes:
+      - airlock_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airlock -d airlock"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mock-upstream:
+    build:
+      context: ../..
+      dockerfile: apps/mock-upstream/Dockerfile
+    environment:
+      PORT: "4000"
+    ports:
+      - "4000:4000"
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: apps/gateway/Dockerfile
+    environment:
+      NODE_ENV: development
+      PORT: "3000"
+      LOG_LEVEL: info
+      CORS_ALLOWED_ORIGINS: ""
+      DATABASE_URL: postgres://airlock:airlock@postgres:5432/airlock
+      JWT_ACCESS_SECRET: dev-access-secret-change-me
+      JWT_REFRESH_SECRET: dev-refresh-secret-change-me
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      PROXY_UPSTREAM_TIMEOUT_MS: "5000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  airlock_pgdata:
