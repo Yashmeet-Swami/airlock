@@ -27,8 +27,26 @@ Only `rate_limit.exceeded` is wired as a dispatchable event so far — see the
 Phase 3 plan for why the rest of the event catalog waits for the phases that
 actually consume it.
 
-Everything else (OpenSearch log search, Prometheus/Grafana, circuit breaker,
-MinIO archival/replay) is future work per the phase plan.
+**Phase 4 — Search: OpenSearch, Log Explorer, Analytics** (blueprint §24.5) is
+implemented: every proxied request (`request.completed`/`.failed`) and every
+`rate_limit.exceeded` event is indexed into a daily OpenSearch index
+(`airlock-requests-{yyyy.MM.dd}`, §11.1's mapping exactly), via a second
+`apps/workers` consumer (`logIndexer.worker.ts`) reading a new `requests`
+BullMQ queue. `GET /logs/search` (full-text + filtered, tenant-scoped) and
+`GET /logs/aggregate` (top routes / error-rate-over-time, also tenant-scoped)
+sit on top of it, callable with either a dashboard JWT (any role) or an API
+key carrying `read:logs`. A first, deliberately minimal `apps/dashboard`
+(Vite + React, unstyled — see the backend-first policy below) adds a login
+page and a Log Explorer table over `/logs/search`.
+
+Everything else (Prometheus/Grafana, circuit breaker, MinIO archival/replay)
+is future work per the phase plan.
+
+**A note on the dashboard.** Airlock is intentionally backend-first: each
+backend phase gets only the bare-minimum UI needed to verify/manage what it
+built (no styling, no UX polish) until a dedicated later phase expands the
+whole thing into a proper developer-experience UI. `apps/dashboard` today has
+exactly two pages — login and Log Explorer — and nothing more.
 
 ### Verifying a webhook signature
 
@@ -50,12 +68,15 @@ npm install
 npm run dev
 ```
 
-This brings up Postgres, Redis, the gateway, the webhook delivery worker, and a
-small `mock-upstream` fixture service via Docker Compose, running migrations
-automatically. Once healthy:
+This brings up Postgres, Redis, OpenSearch, the gateway, the workers service
+(webhook delivery + log indexing), the dashboard, and a small `mock-upstream`
+fixture service via Docker Compose, running migrations automatically. Once
+healthy:
 
 - Gateway: http://localhost:3000
 - Swagger UI: http://localhost:3000/docs
+- Dashboard: http://localhost:5173
+- OpenSearch: http://localhost:9200
 - Mock upstream: http://localhost:4000
 
 Stop everything with `npm run dev:down`.
@@ -91,6 +112,12 @@ curl -s -X POST http://localhost:3000/admin/rate-limit-policies \
 
 # 6. (Phase 2) Mark a route cacheable and see X-Cache flip from MISS to HIT
 curl -s -i http://localhost:3000/proxy/acme-corp/v1/payments | grep -i x-cache
+
+# 7. (Phase 4) Search the request you just made (indexing is async — give it a second)
+curl -s "http://localhost:3000/logs/search?route=/v1/payments" -H "Authorization: Bearer <accessToken>"
+
+# 8. (Phase 4) See it show up in the per-route aggregate too
+curl -s "http://localhost:3000/logs/aggregate" -H "Authorization: Bearer <accessToken>"
 ```
 
 ## Development
@@ -98,16 +125,17 @@ curl -s -i http://localhost:3000/proxy/acme-corp/v1/payments | grep -i x-cache
 - `npm run build` — type-check every workspace (`tsc --noEmit`)
 - `npm run lint` — ESLint across the monorepo
 - `npm test` — runs each workspace's own suite; `gateway` and `workers` each spin
-  up their own throwaway Postgres + Redis containers via Docker (requires Docker
-  to be running) — `workers`' harness runs gateway's migrations against its own
-  container since gateway owns the schema
+  up their own throwaway Postgres + Redis + OpenSearch containers via Docker
+  (requires Docker to be running; OpenSearch is JVM-based and noticeably
+  slower to boot than Postgres/Redis) — `workers`' harness runs gateway's
+  migrations against its own container since gateway owns the schema
 - `npm run migrate` — apply pending Postgres migrations to whatever
   `DATABASE_URL` currently points at
 
 ## Layout
 
 See blueprint §23 for the full rationale. Summary: `apps/*` are independently
-deployable services (`gateway`, `workers` — the BullMQ webhook delivery
-consumer, `mock-upstream` — a dev/test fixture, not a shipped product),
-`packages/*` is code shared between apps (`shared-types`), and `infra/` holds
-Docker/monitoring config.
+deployable services (`gateway`, `workers` — BullMQ webhook delivery + log
+indexing, `dashboard` — minimal Vite+React admin UI, `mock-upstream` — a
+dev/test fixture, not a shipped product), `packages/*` is code shared between
+apps (`shared-types`), and `infra/` holds Docker/monitoring config.

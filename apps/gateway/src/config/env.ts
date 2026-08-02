@@ -23,6 +23,7 @@ const envSchema = z.object({
   // blueprint doesn't specify concrete numbers for.
   RATE_LIMIT_FALLBACK_LIMIT: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_FALLBACK_WINDOW_S: z.coerce.number().int().positive().default(60),
+  OPENSEARCH_URL: z.string().min(1, "OPENSEARCH_URL is required"),
 });
 
 const parsed = envSchema.safeParse(process.env);

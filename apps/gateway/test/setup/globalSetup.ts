@@ -12,6 +12,10 @@ const REDIS_CONTAINER_NAME = "airlock-test-redis";
 const REDIS_PORT = 57379;
 const REDIS_URL = `redis://localhost:${REDIS_PORT}`;
 
+const OPENSEARCH_CONTAINER_NAME = "airlock-test-opensearch";
+const OPENSEARCH_PORT = 9201;
+const OPENSEARCH_URL = `http://localhost:${OPENSEARCH_PORT}`;
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -47,6 +51,20 @@ async function waitForRedis(): Promise<void> {
   throw new Error("Redis test container did not become ready in time");
 }
 
+async function waitForOpenSearch(): Promise<void> {
+  // Slower to boot than Postgres/Redis (JVM-based) — more attempts, longer waits.
+  for (let attempt = 0; attempt < 60; attempt++) {
+    try {
+      const res = await fetch(`${OPENSEARCH_URL}/_cluster/health`);
+      if (res.ok) return;
+    } catch {
+      // not ready yet
+    }
+    await sleep(2000);
+  }
+  throw new Error("OpenSearch test container did not become ready in time");
+}
+
 async function runMigrationsWithRetry(attempts = 3): Promise<void> {
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
@@ -75,6 +93,7 @@ function removeContainer(name: string) {
 export async function setup(): Promise<void> {
   removeContainer(POSTGRES_CONTAINER_NAME);
   removeContainer(REDIS_CONTAINER_NAME);
+  removeContainer(OPENSEARCH_CONTAINER_NAME);
 
   execFileSync(
     "docker",
@@ -102,13 +121,34 @@ export async function setup(): Promise<void> {
     { stdio: "ignore" },
   );
 
+  execFileSync(
+    "docker",
+    [
+      "run",
+      "-d",
+      "--name",
+      OPENSEARCH_CONTAINER_NAME,
+      "-e",
+      "discovery.type=single-node",
+      "-e",
+      "DISABLE_SECURITY_PLUGIN=true",
+      "-e",
+      "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m",
+      "-p",
+      `${OPENSEARCH_PORT}:9200`,
+      "opensearchproject/opensearch:2",
+    ],
+    { stdio: "ignore" },
+  );
+
   process.env.DATABASE_URL = DATABASE_URL;
   process.env.REDIS_URL = REDIS_URL;
+  process.env.OPENSEARCH_URL = OPENSEARCH_URL;
   process.env.JWT_ACCESS_SECRET ??= "test-access-secret";
   process.env.JWT_REFRESH_SECRET ??= "test-refresh-secret";
   process.env.LOG_LEVEL ??= "silent";
 
-  await Promise.all([waitForPostgres(), waitForRedis()]);
+  await Promise.all([waitForPostgres(), waitForRedis(), waitForOpenSearch()]);
 
   // Postgres's docker-entrypoint briefly starts and stops an internal server to
   // run initdb before the real one comes up — a successful connect() can land
@@ -120,4 +160,5 @@ export async function setup(): Promise<void> {
 export async function teardown(): Promise<void> {
   removeContainer(POSTGRES_CONTAINER_NAME);
   removeContainer(REDIS_CONTAINER_NAME);
+  removeContainer(OPENSEARCH_CONTAINER_NAME);
 }

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@airlock/shared-types": "*",
+    "@opensearch-project/opensearch": "^2.13.0",
     "bullmq": "^5.34.10",
     "dotenv": "^16.4.7",
     "ioredis": "^5.4.2",

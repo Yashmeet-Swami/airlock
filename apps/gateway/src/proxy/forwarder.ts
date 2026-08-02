@@ -4,6 +4,11 @@ export interface ForwardResult {
   status: number;
   headers: Record<string, string>;
   body: unknown;
+  /** "response" = a real reply from the upstream (whatever its status code);
+   *  "network_error" = the gateway itself couldn't reach/finish talking to it.
+   *  Lets the caller emit request.completed vs request.failed without
+   *  guessing from magic status codes an upstream could legitimately return too. */
+  kind: "response" | "network_error";
 }
 
 const HOP_BY_HOP_HEADERS = new Set([
@@ -58,13 +63,14 @@ export async function forwardRequest(
       ? await response.json().catch(() => null)
       : await response.text();
 
-    return { status: response.status, headers: responseHeaders, body: responseBody };
+    return { status: response.status, headers: responseHeaders, body: responseBody, kind: "response" };
   } catch (err) {
     const isTimeout = err instanceof Error && err.name === "TimeoutError";
     return {
       status: isTimeout ? 504 : 502,
       headers: {},
       body: { error: isTimeout ? "upstream_timeout" : "upstream_unreachable" },
+      kind: "network_error",
     };
   }
 }

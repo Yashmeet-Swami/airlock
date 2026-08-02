@@ -17,6 +17,8 @@ const envSchema = z.object({
     .string()
     .default("1000,5000,30000,120000,600000")
     .transform((value) => value.split(",").map((ms) => Number(ms.trim()))),
+  OPENSEARCH_URL: z.string().min(1, "OPENSEARCH_URL is required"),
+  LOG_INDEXER_CONCURRENCY: z.coerce.number().int().positive().default(10),
 });
 
 const parsed = envSchema.safeParse(process.env);

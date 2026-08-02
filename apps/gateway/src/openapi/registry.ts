@@ -178,6 +178,26 @@ registry.registerPath({
   responses: { 202: { description: "Re-queued" }, 404: errorResponse },
 });
 
+const bearerOrApiKeySecurity: Record<string, string[]>[] = [{ BearerAuth: [] }, { ApiKeyAuth: [] }];
+
+registry.registerPath({
+  method: "get",
+  path: "/logs/search",
+  tags: ["Logs"],
+  summary: "Full-text + filtered search over the caller's tenant's request logs",
+  security: bearerOrApiKeySecurity,
+  responses: { 200: { description: "Search results" }, 400: errorResponse },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/logs/aggregate",
+  tags: ["Logs"],
+  summary: "Top routes, or error rate over time (window=), within the caller's tenant",
+  security: bearerOrApiKeySecurity,
+  responses: { 200: { description: "Aggregation results" }, 400: errorResponse },
+});
+
 registry.registerPath({
   method: "get",
   path: "/proxy/{tenantSlug}/{path}",

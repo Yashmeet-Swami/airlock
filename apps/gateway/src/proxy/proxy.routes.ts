@@ -2,8 +2,10 @@ import { Router } from "express";
 import type { HttpMethod } from "@airlock/shared-types";
 import { verifyApiKey } from "../middleware/auth.js";
 import { publishEvent } from "../events/publisher.js";
+import { publishRequestEvent } from "../events/requestLogger.js";
 import { getCachedResponse, setCachedResponse } from "../redis/cache.js";
 import { checkRateLimit } from "../redis/rateLimit.js";
+import { sha256Hex } from "../security/hash.js";
 import { forwardRequest } from "./forwarder.js";
 import { resolveProxyTarget } from "./router.js";
 
@@ -17,6 +19,7 @@ function buildSubPath(splat: unknown): string {
 }
 
 proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
+  const startedAt = Date.now();
   const method = req.method as HttpMethod;
   if (!SUPPORTED_METHODS.has(method)) {
     res.status(405).json({ error: "method_not_allowed" });
@@ -37,6 +40,14 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
   }
 
   const { tenant, route } = resolved;
+  const requestId = String(req.id);
+  const baseLogFields = {
+    requestId,
+    tenantId: tenant.id,
+    route: route.pathPattern,
+    userAgent: req.header("user-agent") ?? null,
+    ipHash: req.ip ? sha256Hex(req.ip) : null,
+  };
 
   // Auth before rate limiting: a request that fails auth shouldn't burn the
   // tenant's real rate-limit budget (see Phase 2 plan, scope decision #2).
@@ -64,11 +75,13 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
   res.setHeader("X-RateLimit-Remaining", String(rateLimit.remaining));
   if (!rateLimit.allowed) {
     res.setHeader("Retry-After", String(rateLimit.retryAfterS));
-    publishEvent(tenant.id, "rate_limit.exceeded", {
+    const rateLimitPayload = {
       routeId: route.id,
       limit: rateLimit.limit,
       current: rateLimit.limit - rateLimit.remaining,
-    });
+    };
+    publishEvent(tenant.id, "rate_limit.exceeded", rateLimitPayload);
+    publishRequestEvent("rate_limit.exceeded", { ...baseLogFields, ...rateLimitPayload });
     res.status(429).json({ error: "rate_limit_exceeded", retryAfterSeconds: rateLimit.retryAfterS });
     return;
   }
@@ -82,6 +95,14 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
       res.status(cached.status);
       for (const [key, value] of Object.entries(cached.headers)) res.setHeader(key, value);
       res.json(cached.body);
+      publishRequestEvent("request.completed", {
+        ...baseLogFields,
+        method,
+        statusCode: cached.status,
+        latencyMs: Date.now() - startedAt,
+        cacheHit: true,
+        upstream: route.upstreamUrl,
+      });
       return;
     }
   }
@@ -96,4 +117,22 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
   res.status(result.status);
   for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
   res.json(result.body);
+
+  if (result.kind === "network_error") {
+    const body = result.body as { error?: string } | null;
+    publishRequestEvent("request.failed", {
+      ...baseLogFields,
+      error: body?.error ?? "unknown_error",
+      upstream: route.upstreamUrl,
+    });
+  } else {
+    publishRequestEvent("request.completed", {
+      ...baseLogFields,
+      method,
+      statusCode: result.status,
+      latencyMs: Date.now() - startedAt,
+      cacheHit: false,
+      upstream: route.upstreamUrl,
+    });
+  }
 });

@@ -69,3 +69,39 @@ export async function requireApiKeyAuth(req: Request, res: Response, next: NextF
   req.auth = { type: "apikey", ...result };
   next();
 }
+
+/** §22.1: some endpoints (e.g. /logs/*) accept either a dashboard JWT (any
+ *  role) or a machine API key carrying a specific scope. */
+export function requireJwtOrScope(scope: ApiKeyScope) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      try {
+        const payload = verifyAccessToken(authHeader.slice("Bearer ".length));
+        req.auth = { type: "jwt", userId: payload.sub, tenantId: payload.tenantId, role: payload.role };
+        next();
+      } catch {
+        res.status(401).json({ error: "unauthorized", message: "Invalid or expired access token" });
+      }
+      return;
+    }
+
+    const rawKey = req.header("X-API-Key");
+    if (rawKey) {
+      const result = await verifyApiKey(rawKey);
+      if (!result) {
+        res.status(401).json({ error: "unauthorized", message: "Invalid or revoked API key" });
+        return;
+      }
+      if (!result.scopes.includes(scope)) {
+        res.status(403).json({ error: "forbidden", message: `API key missing required scope: ${scope}` });
+        return;
+      }
+      req.auth = { type: "apikey", ...result };
+      next();
+      return;
+    }
+
+    res.status(401).json({ error: "unauthorized", message: "Missing bearer token or X-API-Key header" });
+  };
+}
