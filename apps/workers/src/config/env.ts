@@ -20,6 +20,18 @@ const envSchema = z.object({
   OPENSEARCH_URL: z.string().min(1, "OPENSEARCH_URL is required"),
   LOG_INDEXER_CONCURRENCY: z.coerce.number().int().positive().default(10),
   METRICS_PORT: z.coerce.number().int().positive().default(3001),
+  // §12.1 (Phase 6): where request archives are written.
+  MINIO_ENDPOINT: z.string().min(1, "MINIO_ENDPOINT is required"),
+  MINIO_PORT: z.coerce.number().int().positive().default(9000),
+  MINIO_ACCESS_KEY: z.string().min(1, "MINIO_ACCESS_KEY is required"),
+  MINIO_SECRET_KEY: z.string().min(1, "MINIO_SECRET_KEY is required"),
+  // z.coerce.boolean() would treat the string "false" as truthy — every
+  // non-empty env var string is truthy in JS — so this needs an explicit map.
+  MINIO_USE_SSL: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true"),
+  MINIO_ARCHIVE_BUCKET: z.string().default("request-archives"),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -6,15 +6,15 @@ import { requireRole } from "../middleware/authorize.js";
 import { recordAudit } from "../audit/recordAudit.js";
 import { withTenantScope } from "../db/client.js";
 import { createRoute, deleteRoute, findRouteById, listRoutes, updateRoute } from "../db/routes.repo.js";
+import { findTenantById } from "../db/tenants.repo.js";
 import { invalidateRouteCache } from "../redis/cache.js";
+import { isUpstreamAllowed } from "../security/ssrf.js";
 import { paramString } from "../utils/params.js";
 
 export const routesRouter = Router();
 
 const METHODS: [HttpMethod, ...HttpMethod[]] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
-// Well-formed absolute URL only for Phase 1 — the private/link-local IP
-// blocklist (full SSRF defense) is deliberately deferred to Phase 6 (§21.3, §24.7).
 const routeInputSchema = z.object({
   pathPattern: z.string().min(1).startsWith("/"),
   upstreamUrl: z.string().url(),
@@ -42,6 +42,13 @@ routesRouter.post("/", requireJwtAuth, requireRole("admin"), async (req, res, ne
     res.status(400).json({ error: "validation_error", details: parsed.error.flatten() });
     return;
   }
+
+  const tenant = await findTenantById(req.auth!.tenantId);
+  if (!(await isUpstreamAllowed(parsed.data.upstreamUrl, tenant?.allowInternalUpstreams ?? false))) {
+    res.status(400).json({ error: "upstream_not_allowed", message: "Upstream resolves to a private/internal address" });
+    return;
+  }
+
   try {
     const scope = withTenantScope(req.auth!.tenantId);
     const route = await createRoute(scope, parsed.data);
@@ -74,6 +81,15 @@ routesRouter.patch("/:id", requireJwtAuth, requireRole("admin"), async (req, res
     res.status(400).json({ error: "validation_error", details: parsed.error.flatten() });
     return;
   }
+
+  if (parsed.data.upstreamUrl) {
+    const tenant = await findTenantById(req.auth!.tenantId);
+    if (!(await isUpstreamAllowed(parsed.data.upstreamUrl, tenant?.allowInternalUpstreams ?? false))) {
+      res.status(400).json({ error: "upstream_not_allowed", message: "Upstream resolves to a private/internal address" });
+      return;
+    }
+  }
+
   try {
     const scope = withTenantScope(req.auth!.tenantId);
     const route = await updateRoute(scope, paramString(req.params.id), parsed.data);

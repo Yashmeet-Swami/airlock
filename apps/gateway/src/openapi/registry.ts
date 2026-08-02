@@ -187,6 +187,16 @@ registry.registerPath({
   responses: { 200: { description: "Audit log entries" }, 400: errorResponse },
 });
 
+registry.registerPath({
+  method: "post",
+  path: "/admin/replay/{requestId}",
+  tags: ["Replay"],
+  summary: "Re-issue a previously archived request through forwardRequest (§12.3)",
+  security: bearerSecurity,
+  request: { params: z.object({ requestId: z.string() }) },
+  responses: { 200: { description: "Replay result" }, 404: errorResponse },
+});
+
 const bearerOrApiKeySecurity: Record<string, string[]>[] = [{ BearerAuth: [] }, { ApiKeyAuth: [] }];
 
 registry.registerPath({
@@ -205,6 +215,15 @@ registry.registerPath({
   summary: "Top routes, or error rate over time (window=), within the caller's tenant",
   security: bearerOrApiKeySecurity,
   responses: { 200: { description: "Aggregation results" }, 400: errorResponse },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/analytics/export",
+  tags: ["Analytics"],
+  summary: "Export matching request logs as CSV/NDJSON to a presigned MinIO URL (§12.2)",
+  security: bearerSecurity,
+  responses: { 201: { description: "Export created" }, 400: errorResponse },
 });
 
 registry.registerPath({

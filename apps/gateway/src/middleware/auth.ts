@@ -12,6 +12,10 @@ export function jwtUserId(req: Request): string {
   return (req.auth as JwtAuth).userId;
 }
 
+export function jwtRole(req: Request): JwtAuth["role"] {
+  return (req.auth as JwtAuth).role;
+}
+
 /** Verifies the admin/dashboard JWT (Authorization: Bearer <token>) and attaches req.auth. */
 export function requireJwtAuth(req: Request, res: Response, next: NextFunction): void {
   const header = req.headers.authorization;

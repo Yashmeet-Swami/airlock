@@ -12,10 +12,13 @@ import { rateLimitPoliciesRouter } from "./admin/rateLimitPolicies.controller.js
 import { cacheRouter } from "./admin/cache.controller.js";
 import { webhooksRouter } from "./admin/webhooks.controller.js";
 import { auditLogRouter } from "./admin/auditLog.controller.js";
+import { replayRouter } from "./admin/replay.controller.js";
 import { logsRouter } from "./analytics/logs.controller.js";
+import { exportRouter } from "./analytics/export.controller.js";
 import { healthRouter } from "./health/health.routes.js";
 import { registry } from "./observability/metrics.js";
 import { proxyRouter } from "./proxy/proxy.routes.js";
+import { realtimeRouter } from "./realtime/traffic.routes.js";
 import { openApiDocument } from "./openapi/document.js";
 
 export function createApp() {
@@ -52,7 +55,10 @@ export function createApp() {
   app.use("/admin/cache", cacheRouter);
   app.use("/admin/webhooks", webhooksRouter);
   app.use("/admin/audit-log", auditLogRouter);
+  app.use("/admin/replay", replayRouter);
   app.use("/logs", logsRouter);
+  app.use("/analytics", exportRouter);
+  app.use("/realtime", realtimeRouter);
   app.use("/proxy", proxyRouter);
 
   app.use((_req, res) => {

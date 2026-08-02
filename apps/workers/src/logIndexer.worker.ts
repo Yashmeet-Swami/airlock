@@ -3,6 +3,7 @@ import { QUEUE_NAMES, type RequestLogDocument, type RequestLogJobData } from "@a
 import { env } from "./config/env.js";
 import { bullmqConnection } from "./redis/bullmqConnection.js";
 import { ensureIndexExists, openSearchClient } from "./opensearch/client.js";
+import { archiveRequest } from "./archival/archiveRequest.js";
 import { logger } from "./observability/logger.js";
 
 function toDocument(job: RequestLogJobData): RequestLogDocument {
@@ -57,6 +58,17 @@ async function processJob(job: Job<RequestLogJobData>): Promise<void> {
   const document = toDocument(job.data);
   const indexName = await ensureIndexExists(new Date(job.data.timestamp));
   await openSearchClient.index({ index: indexName, body: document, refresh: true });
+
+  // §12.1/Phase 6 plan scope decision #2: archival is a second step of this
+  // same job (not a second consumer on the queue — BullMQ workers are
+  // competing consumers, not pub/sub, so a second Worker on `requests` would
+  // only see some events, not all of them). A thrown error here fails the
+  // whole job, so a retry re-indexes too — an accepted coupled-failure
+  // trade-off, not a true second failure domain.
+  const { eventName, payload } = job.data;
+  if ((eventName === "request.completed" || eventName === "request.failed") && payload.archive) {
+    await archiveRequest(payload.tenantId, payload.requestId, job.data.timestamp, payload.archive);
+  }
 }
 
 export function startLogIndexerWorker(): Worker<RequestLogJobData> {

@@ -1,15 +1,18 @@
 import { Router } from "express";
 import { z } from "zod";
-import { jwtUserId, requireJwtAuth } from "../middleware/auth.js";
+import { jwtRole, jwtUserId, requireJwtAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/authorize.js";
 import { recordAudit } from "../audit/recordAudit.js";
-import { deleteTenant, findTenantById, updateTenantName } from "../db/tenants.repo.js";
+import { deleteTenant, findTenantById, updateTenant } from "../db/tenants.repo.js";
 import { paramString } from "../utils/params.js";
 
 export const tenantsRouter = Router();
 
 const updateTenantSchema = z.object({
-  name: z.string().min(2).max(100),
+  name: z.string().min(2).max(100).optional(),
+  // §21.3: an explicit opt-in to point routes at private/internal upstreams —
+  // owner-only even though the route itself only requires "admin" (see below).
+  allowInternalUpstreams: z.boolean().optional(),
 });
 
 /** Every handler ignores :id beyond a 404 sanity check — the tenant acted on is
@@ -37,7 +40,11 @@ tenantsRouter.patch("/:id", requireJwtAuth, requireRole("admin"), async (req, re
     res.status(400).json({ error: "validation_error", details: parsed.error.flatten() });
     return;
   }
-  const tenant = await updateTenantName(req.auth!.tenantId, parsed.data.name);
+  if (parsed.data.allowInternalUpstreams !== undefined && jwtRole(req) !== "owner") {
+    res.status(403).json({ error: "forbidden", message: "Requires role >= owner to change allowInternalUpstreams" });
+    return;
+  }
+  const tenant = await updateTenant(req.auth!.tenantId, parsed.data);
   recordAudit(req.auth!.tenantId, jwtUserId(req), "tenant.updated", "tenant", req.auth!.tenantId, parsed.data);
   res.status(200).json(tenant);
 });

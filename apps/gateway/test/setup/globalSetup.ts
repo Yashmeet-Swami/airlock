@@ -152,6 +152,11 @@ export async function setup(): Promise<void> {
   process.env.CIRCUIT_BREAKER_WINDOW_SIZE ??= "4";
   process.env.CIRCUIT_BREAKER_COOLDOWN_MS ??= "300";
   process.env.PROXY_RETRY_BASE_MS ??= "20";
+  // MinIO isn't spun up for the test suite (no test currently exercises
+  // replay/export/archival) — these just need to satisfy env schema parsing.
+  process.env.MINIO_ENDPOINT ??= "localhost";
+  process.env.MINIO_ACCESS_KEY ??= "test-access-key";
+  process.env.MINIO_SECRET_KEY ??= "test-secret-key";
 
   await Promise.all([waitForPostgres(), waitForRedis(), waitForOpenSearch()]);
 

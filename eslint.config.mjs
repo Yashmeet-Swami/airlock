@@ -29,4 +29,11 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // k6 load test scripts run inside the k6 runtime, not Node — __ENV is a k6 global.
+    files: ["**/test/load/*.k6.js"],
+    languageOptions: {
+      globals: { __ENV: "readonly" },
+    },
+  },
 );

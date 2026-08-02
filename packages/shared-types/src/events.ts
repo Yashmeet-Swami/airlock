@@ -60,17 +60,38 @@ interface BaseLogFields {
   ipHash: string | null;
 }
 
+/**
+ * §12.1/§12.3 (Phase 6): captured alongside request.completed/.failed only —
+ * self-contained enough (upstreamUrl/subPath/query/method + headers/bodies) to
+ * replay the original call later via forwardRequest without a second lookup.
+ * Bodies are size-capped and set to null (not omitted) when they exceed it, so
+ * consumers can tell "too big to archive" apart from "there was no body."
+ */
+export interface ArchivePayload {
+  upstreamUrl: string;
+  subPath: string;
+  query: string;
+  method: string;
+  requestHeaders: Record<string, string>;
+  requestBody: unknown;
+  responseHeaders: Record<string, string>;
+  responseBody: unknown;
+  statusCode: number;
+}
+
 export interface RequestCompletedPayload extends BaseLogFields {
   method: string;
   statusCode: number;
   latencyMs: number;
   cacheHit: boolean;
   upstream: string;
+  archive?: ArchivePayload;
 }
 
 export interface RequestFailedPayload extends BaseLogFields {
   error: string;
   upstream: string;
+  archive?: ArchivePayload;
 }
 
 export interface RateLimitExceededLogPayload extends BaseLogFields {

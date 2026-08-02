@@ -9,6 +9,7 @@
     "build": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:load": "docker run --rm --network docker_default -i grafana/k6 run - < test/load/rateLimit.k6.js",
     "migrate": "node-pg-migrate up --migrations-dir src/db/migrations",
     "migrate:down": "node-pg-migrate down --migrations-dir src/db/migrations",
     "migrate:create": "node-pg-migrate create --migrations-dir src/db/migrations"
@@ -25,6 +26,7 @@
     "helmet": "^8.0.0",
     "ioredis": "^5.4.2",
     "jsonwebtoken": "^9.0.2",
+    "minio": "^8.0.3",
     "ms": "^2.1.3",
     "pg": "^8.13.1",
     "pino": "^9.6.0",

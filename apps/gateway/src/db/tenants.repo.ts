@@ -5,6 +5,7 @@ interface TenantRow {
   id: string;
   name: string;
   plan: string;
+  allow_internal_upstreams: boolean;
   created_at: Date;
 }
 
@@ -13,6 +14,7 @@ function toTenant(row: TenantRow): Tenant {
     id: row.id,
     name: row.name,
     plan: row.plan,
+    allowInternalUpstreams: row.allow_internal_upstreams,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -37,10 +39,15 @@ export async function findTenantById(id: string): Promise<Tenant | null> {
   return rows[0] ? toTenant(rows[0]) : null;
 }
 
-export async function updateTenantName(id: string, name: string): Promise<Tenant | null> {
+export async function updateTenant(
+  id: string,
+  fields: { name?: string; allowInternalUpstreams?: boolean },
+): Promise<Tenant | null> {
   const { rows } = await queryUnscoped<TenantRow>(
-    `UPDATE tenants SET name = $2 WHERE id = $1 RETURNING *`,
-    [id, name],
+    `UPDATE tenants
+     SET name = COALESCE($2, name), allow_internal_upstreams = COALESCE($3, allow_internal_upstreams)
+     WHERE id = $1 RETURNING *`,
+    [id, fields.name ?? null, fields.allowInternalUpstreams ?? null],
   );
   return rows[0] ? toTenant(rows[0]) : null;
 }

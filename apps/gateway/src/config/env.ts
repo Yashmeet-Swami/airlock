@@ -33,6 +33,20 @@ const envSchema = z.object({
   // the caller supplies Idempotency-Key.
   PROXY_MAX_RETRIES: z.coerce.number().int().min(0).default(2),
   PROXY_RETRY_BASE_MS: z.coerce.number().int().positive().default(100),
+  // §12.1/§24.7 (Phase 6): replay reads from the archive bucket, export writes
+  // to (and presigns from) the exports bucket.
+  MINIO_ENDPOINT: z.string().min(1, "MINIO_ENDPOINT is required"),
+  MINIO_PORT: z.coerce.number().int().positive().default(9000),
+  MINIO_ACCESS_KEY: z.string().min(1, "MINIO_ACCESS_KEY is required"),
+  MINIO_SECRET_KEY: z.string().min(1, "MINIO_SECRET_KEY is required"),
+  // z.coerce.boolean() would treat the string "false" as truthy — every
+  // non-empty env var string is truthy in JS — so this needs an explicit map.
+  MINIO_USE_SSL: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true"),
+  MINIO_ARCHIVE_BUCKET: z.string().default("request-archives"),
+  MINIO_EXPORTS_BUCKET: z.string().default("analytics-exports"),
 });
 
 const parsed = envSchema.safeParse(process.env);

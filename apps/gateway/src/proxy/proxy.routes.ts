@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { HttpMethod } from "@airlock/shared-types";
+import type { ArchivePayload, HttpMethod } from "@airlock/shared-types";
 import { env } from "../config/env.js";
 import { verifyApiKey } from "../middleware/auth.js";
 import { publishEvent } from "../events/publisher.js";
@@ -15,6 +15,7 @@ import {
 import { checkBreaker, recordBreakerResult } from "../redis/circuitBreaker.js";
 import { getCachedResponse, setCachedResponse } from "../redis/cache.js";
 import { checkRateLimit } from "../redis/rateLimit.js";
+import { publishTrafficEvent } from "../realtime/publisher.js";
 import { sha256Hex } from "../security/hash.js";
 import { forwardRequest } from "./forwarder.js";
 import { resolveProxyTarget } from "./router.js";
@@ -32,6 +33,51 @@ const SUPPORTED_METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "D
 function buildSubPath(splat: unknown): string {
   const segments = Array.isArray(splat) ? splat : splat ? [String(splat)] : [];
   return "/" + segments.join("/");
+}
+
+// §12.1: archived alongside the log event so replay (Phase 6) never needs a
+// second round-trip to reconstruct the original call. Auth material is never
+// archived; oversized bodies are nulled out (not omitted) rather than kept.
+const MAX_ARCHIVE_BODY_CHARS = 32_000;
+const REDACTED_REQUEST_HEADERS = new Set(["authorization", "x-api-key", "cookie"]);
+
+function capArchiveBody(body: unknown): unknown {
+  if (body === undefined) return null;
+  try {
+    return JSON.stringify(body).length > MAX_ARCHIVE_BODY_CHARS ? null : body;
+  } catch {
+    return null;
+  }
+}
+
+function buildArchivePayload(
+  upstreamUrl: string,
+  subPath: string,
+  query: string,
+  method: string,
+  requestHeaders: Record<string, string | string[] | undefined>,
+  requestBody: unknown,
+  responseHeaders: Record<string, string>,
+  responseBody: unknown,
+  statusCode: number,
+): ArchivePayload {
+  const redactedRequestHeaders: Record<string, string> = {};
+  for (const [key, value] of Object.entries(requestHeaders)) {
+    if (!value || REDACTED_REQUEST_HEADERS.has(key.toLowerCase())) continue;
+    redactedRequestHeaders[key] = Array.isArray(value) ? value.join(", ") : value;
+  }
+
+  return {
+    upstreamUrl,
+    subPath,
+    query,
+    method,
+    requestHeaders: redactedRequestHeaders,
+    requestBody: capArchiveBody(requestBody),
+    responseHeaders,
+    responseBody: capArchiveBody(responseBody),
+    statusCode,
+  };
 }
 
 proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
@@ -98,6 +144,16 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
     };
     publishEvent(tenant.id, "rate_limit.exceeded", rateLimitPayload);
     publishRequestEvent("rate_limit.exceeded", { ...baseLogFields, ...rateLimitPayload });
+    publishTrafficEvent(tenant.id, {
+      requestId,
+      route: route.pathPattern,
+      method,
+      statusCode: 429,
+      latencyMs: Date.now() - startedAt,
+      cacheHit: false,
+      outcome: "rate_limited",
+      timestamp: new Date().toISOString(),
+    });
     rateLimitRejectionsTotal.inc({ route: route.pathPattern });
     requestsTotal.inc({ method, route: route.pathPattern, status_code: "429" });
     res.status(429).json({ error: "rate_limit_exceeded", retryAfterSeconds: rateLimit.retryAfterS });
@@ -121,9 +177,30 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
         latencyMs: Date.now() - startedAt,
         cacheHit: true,
         upstream: route.upstreamUrl,
+        archive: buildArchivePayload(
+          route.upstreamUrl,
+          subPath,
+          search,
+          method,
+          req.headers,
+          req.body,
+          cached.headers,
+          cached.body,
+          cached.status,
+        ),
       });
       requestsTotal.inc({ method, route: route.pathPattern, status_code: String(cached.status) });
       requestDurationMs.observe({ method, route: route.pathPattern }, Date.now() - startedAt);
+      publishTrafficEvent(tenant.id, {
+        requestId,
+        route: route.pathPattern,
+        method,
+        statusCode: cached.status,
+        latencyMs: Date.now() - startedAt,
+        cacheHit: true,
+        outcome: "completed",
+        timestamp: new Date().toISOString(),
+      });
       return;
     }
     cacheMissesTotal.inc({ route: route.pathPattern });
@@ -141,6 +218,16 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
       upstream: route.upstreamUrl,
     });
     requestsTotal.inc({ method, route: route.pathPattern, status_code: "503" });
+    publishTrafficEvent(tenant.id, {
+      requestId,
+      route: route.pathPattern,
+      method,
+      statusCode: 503,
+      latencyMs: Date.now() - startedAt,
+      cacheHit: false,
+      outcome: "circuit_open",
+      timestamp: new Date().toISOString(),
+    });
     res.status(503).json({ error: "circuit_open" });
     return;
   }
@@ -172,12 +259,35 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
   requestsTotal.inc({ method, route: route.pathPattern, status_code: String(result.status) });
   requestDurationMs.observe({ method, route: route.pathPattern }, Date.now() - startedAt);
 
+  const archive = buildArchivePayload(
+    route.upstreamUrl,
+    subPath,
+    search,
+    method,
+    req.headers,
+    req.body,
+    result.headers,
+    result.body,
+    result.status,
+  );
+
   if (result.kind === "network_error") {
     const body = result.body as { error?: string } | null;
     publishRequestEvent("request.failed", {
       ...baseLogFields,
       error: body?.error ?? "unknown_error",
       upstream: route.upstreamUrl,
+      archive,
+    });
+    publishTrafficEvent(tenant.id, {
+      requestId,
+      route: route.pathPattern,
+      method,
+      statusCode: result.status,
+      latencyMs: Date.now() - startedAt,
+      cacheHit: false,
+      outcome: "failed",
+      timestamp: new Date().toISOString(),
     });
   } else {
     publishRequestEvent("request.completed", {
@@ -187,6 +297,17 @@ proxyRouter.all("/:tenantSlug/*splat", async (req, res) => {
       latencyMs: Date.now() - startedAt,
       cacheHit: false,
       upstream: route.upstreamUrl,
+      archive,
+    });
+    publishTrafficEvent(tenant.id, {
+      requestId,
+      route: route.pathPattern,
+      method,
+      statusCode: result.status,
+      latencyMs: Date.now() - startedAt,
+      cacheHit: false,
+      outcome: "completed",
+      timestamp: new Date().toISOString(),
     });
   }
 });

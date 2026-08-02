@@ -39,14 +39,40 @@ key carrying `read:logs`. A first, deliberately minimal `apps/dashboard`
 (Vite + React, unstyled — see the backend-first policy below) adds a login
 page and a Log Explorer table over `/logs/search`.
 
-Everything else (Prometheus/Grafana, circuit breaker, MinIO archival/replay)
-is future work per the phase plan.
+**Phase 5 — Resilience & Metrics** (blueprint §24.6) is implemented: a
+per-upstream-origin circuit breaker (Redis Lua state machine — closed → open
+past a configurable failure rate → half-open probe → closed/open again),
+retries in the forwarder (idempotent methods or an `Idempotency-Key` header,
+exponential backoff + jitter), Prometheus metrics (`GET /metrics` on the
+gateway; a new minimal HTTP server on `apps/workers` exposing its own
+`/metrics` + `/health`), `/health` split into `/health/liveness` and
+`/health/readiness` (the latter checking Postgres + Redis), and an
+`audit_log` table + `GET /admin/audit-log` recording every mutating admin
+endpoint. Prometheus + Grafana ship in docker-compose, provisioned with one
+dashboard (Traffic Overview: requests/sec, error rate, latency percentiles,
+cache hit rate).
+
+**Phase 6 — Advanced: Replay, Exports, Realtime, Hardening** (blueprint
+§24.7) is implemented: every `request.completed`/`.failed` event now archives
+its request/response (headers + size-capped bodies, auth headers redacted)
+to MinIO as part of the same log-indexing job
+(`request-archives/{tenant}/{yyyy}/{MM}/{dd}/{requestId}.json.gz`);
+`POST /admin/replay/:requestId` looks the request up in OpenSearch, fetches
+its archive, and re-issues it through the same `forwardRequest` used for live
+traffic; `POST /analytics/export` runs the same filters as `/logs/search`,
+formats matching hits as CSV/NDJSON, and returns a presigned MinIO URL;
+`GET /realtime/traffic` streams live proxied-request events over SSE
+(auth via `?token=`, since `EventSource` can't set headers) and the dashboard
+gained a Live Traffic page; and routes are now checked against a
+private/link-local/loopback IP blocklist unless the owning tenant has
+explicitly opted in via `tenants.allow_internal_upstreams` (owner-only,
+`PATCH /admin/tenants/:id`).
 
 **A note on the dashboard.** Airlock is intentionally backend-first: each
 backend phase gets only the bare-minimum UI needed to verify/manage what it
 built (no styling, no UX polish) until a dedicated later phase expands the
 whole thing into a proper developer-experience UI. `apps/dashboard` today has
-exactly two pages — login and Log Explorer — and nothing more.
+exactly three pages — login, Log Explorer, and Live Traffic — and nothing more.
 
 ### Verifying a webhook signature
 
@@ -68,16 +94,19 @@ npm install
 npm run dev
 ```
 
-This brings up Postgres, Redis, OpenSearch, the gateway, the workers service
-(webhook delivery + log indexing), the dashboard, and a small `mock-upstream`
-fixture service via Docker Compose, running migrations automatically. Once
-healthy:
+This brings up Postgres, Redis, OpenSearch, MinIO, Prometheus, Grafana, the
+gateway, the workers service (webhook delivery + log indexing), the
+dashboard, and a small `mock-upstream` fixture service via Docker Compose,
+running migrations automatically. Once healthy:
 
 - Gateway: http://localhost:3000
 - Swagger UI: http://localhost:3000/docs
 - Dashboard: http://localhost:5173
 - OpenSearch: http://localhost:9200
 - Mock upstream: http://localhost:4000
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3300 (admin/admin, or browse anonymously as a viewer)
+- MinIO console: http://localhost:9001 (airlock-minio/airlock-minio-secret)
 
 Stop everything with `npm run dev:down`.
 
@@ -118,6 +147,24 @@ curl -s "http://localhost:3000/logs/search?route=/v1/payments" -H "Authorization
 
 # 8. (Phase 4) See it show up in the per-route aggregate too
 curl -s "http://localhost:3000/logs/aggregate" -H "Authorization: Bearer <accessToken>"
+
+# 9. (Phase 5) Watch the circuit breaker trip against a route pointed at
+#    something that always fails, then curl /metrics and see it flip:
+curl -s http://localhost:3000/metrics | grep airlock_circuit_breaker_state
+
+# 10. (Phase 5) See your own mutations show up in the audit log
+curl -s http://localhost:3000/admin/audit-log -H "Authorization: Bearer <accessToken>"
+
+# 11. (Phase 6) Replay an archived request (indexing + archival are async — give it a second)
+curl -s -X POST "http://localhost:3000/admin/replay/<requestId>" -H "Authorization: Bearer <accessToken>"
+
+# 12. (Phase 6) Export matching logs and download via the presigned URL
+curl -s -X POST http://localhost:3000/analytics/export \
+  -H "Authorization: Bearer <accessToken>" -H "Content-Type: application/json" \
+  -d '{"format":"csv"}'
+
+# 13. (Phase 6) Watch live traffic over SSE (the dashboard's Live Traffic page does this too)
+curl -N "http://localhost:3000/realtime/traffic?token=<accessToken>"
 ```
 
 ## Development
@@ -131,6 +178,9 @@ curl -s "http://localhost:3000/logs/aggregate" -H "Authorization: Bearer <access
   migrations against its own container since gateway owns the schema
 - `npm run migrate` — apply pending Postgres migrations to whatever
   `DATABASE_URL` currently points at
+- `npm run test:load --workspace=@airlock/gateway` — best-effort k6 load test
+  (blueprint §24.7) against the live docker-compose stack; not part of `npm
+  test` or any CI gate — see `apps/gateway/test/load/rateLimit.k6.js`
 
 ## Layout
 
