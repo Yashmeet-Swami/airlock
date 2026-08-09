@@ -6,9 +6,9 @@
 A self-hosted, multi-tenant API Gateway & Developer Platform: reverse proxy
 routing, JWT + API-key auth, Redis-backed rate limiting/caching, async
 webhooks (BullMQ), OpenSearch-powered log search/analytics, a per-upstream
-circuit breaker, Prometheus/Grafana observability, and MinIO-backed request
-archival/replay + exports — built in six incremental, independently
-tested/committed phases (see Status below).
+circuit breaker, Prometheus/Grafana observability, MinIO-backed request
+archival/replay + exports, and a full admin dashboard — built in seven
+incremental, independently tested/committed phases (see Status below).
 
 ## Status
 
@@ -77,11 +77,29 @@ co-located service — e.g. the `mock-upstream` fixture over the Docker Compose
 network — is the normal case, not the exception; tenants wanting the
 stricter SaaS-style posture can opt out).
 
-**A note on the dashboard.** Airlock is intentionally backend-first: each
-backend phase gets only the bare-minimum UI needed to verify/manage what it
-built (no styling, no UX polish) until a dedicated later phase expands the
-whole thing into a proper developer-experience UI. `apps/dashboard` today has
-exactly three pages — login, Log Explorer, and Live Traffic — and nothing more.
+**Phase 7 (added after Phase 6, not in the original 6-phase plan) — Dashboard
+UI Overhaul.** Airlock was built backend-first on purpose: every phase above
+shipped with only the bare-minimum UI needed to verify what it built, on the
+understanding that a dedicated phase would turn it into a real product once
+the backend reached feature completeness. That phase is done. `apps/dashboard`
+is now a full admin experience — Overview (KPI tiles, time-range presets,
+auto-refresh, requests/error-rate/top-routes charts), Routes, API Keys, Rate
+Limits, Webhooks (+ deliveries + dead-letter replay), Audit Log, Settings,
+plus the restyled Log Explorer and Live Traffic — built with Tailwind v4,
+React Router, TanStack Query, and Recharts, with a Light/Dark/System theme and
+a `Ctrl+K` command palette. See [Screenshots](#screenshots) below.
+
+## Screenshots
+
+![Dashboard demo — time-range presets and the command palette](docs/screenshots/dashboard-demo.gif)
+
+| Overview | Log Explorer | Live Traffic |
+|---|---|---|
+| ![Overview](docs/screenshots/overview.png) | ![Log Explorer](docs/screenshots/log-explorer.png) | ![Live Traffic](docs/screenshots/live-traffic.png) |
+
+| Routes | API Keys | Webhooks |
+|---|---|---|
+| ![Routes](docs/screenshots/routes.png) | ![API Keys](docs/screenshots/api-keys.png) | ![Webhooks](docs/screenshots/webhooks.png) |
 
 ### Verifying a webhook signature
 
@@ -191,10 +209,65 @@ curl -N "http://localhost:3000/realtime/traffic?token=<accessToken>"
   (blueprint §24.7) against the live docker-compose stack; not part of `npm
   test` or any CI gate — see `apps/gateway/test/load/rateLimit.k6.js`
 
+## Design decisions
+
+The trade-offs that actually shaped this codebase, distilled:
+
+- **Atomic Redis Lua, not `INCR`+`EXPIRE`.** Both the rate limiter and the
+  circuit breaker need a check-then-update to be a single atomic operation
+  under concurrent requests — a naive two-command approach has a race window
+  where two requests can both read "under the limit" before either writes.
+  Both features use `redis.defineCommand()`-registered Lua scripts for
+  exactly this reason.
+- **"Reset every N," not a true sliding-window log.** A real sliding window
+  needs a sorted set of every request's timestamp — unbounded memory growth
+  under load. Both the rate limiter and circuit breaker instead count
+  successes/failures in a hash and reset at N, a standard, documented
+  simplification traded once and reused twice.
+- **Archival lives inside the log-indexing job, not a second BullMQ worker.**
+  BullMQ workers on one queue are *competing* consumers, not pub/sub — a
+  second `Worker` on the same queue would only see some events, not all of
+  them. Archival is a second step of the same job instead, at the cost of a
+  coupled failure domain (a retry re-indexes too).
+- **SSRF defense defaults to opt-out, not opt-in — a real bug caught by
+  actually running the stack.** It first defaulted to blocking private/
+  link-local upstreams unless a tenant explicitly opted in, which broke the
+  project's own quickstart demo: Docker Compose service names resolve to
+  private container IPs, and Airlock is self-hosted, where pointing a route
+  at a co-located service is the normal case. Flipped to opt-out once that
+  became obvious from live-testing, not from reasoning about it in the abstract.
+- **Tenant isolation is enforced once, at the data-access layer.** Every
+  query goes through a single `withTenantScope(tenantId)` helper deriving
+  `tenant_id` from the authenticated principal — never a client-supplied
+  parameter — specifically so isolation can't be forgotten in a one-off
+  endpoint. A dedicated security suite asserts tenant A can never read tenant
+  B's routes, keys, logs, or webhooks even with a guessed ID.
+- **Refresh tokens rotate and detect reuse.** Every refresh burns the old
+  token and issues a new one; presenting an already-rotated token is treated
+  as a stolen-token signal and revokes every session for that user, not just
+  the one being used.
+- **The dashboard's dark mode was nearly free — because of a decision made
+  before it existed.** Every component draws from CSS custom properties
+  (`bg-page`, `text-ink`, `border-border`, ...) instead of hardcoded colors.
+  Dark mode ended up being mostly redefining those *values* under one `.dark`
+  class, not a per-component rewrite.
+- **A Vite dev-proxy prefix bug, found twice in a row.** Proxying bare paths
+  like `/logs` straight to the backend meant a full-page refresh on the
+  dashboard's own `/logs` route hit the proxy instead of the SPA and 404'd.
+  Fixed by routing everything through one `/api/` prefix — then hit the exact
+  same bug one level deeper, because a bare `/api` key also prefix-matches
+  `/api-keys`. The trailing slash is load-bearing.
+- **SSE needs an explicit header flush.** `res.writeHead()` alone doesn't
+  push headers onto the socket in Node — they stay buffered until the first
+  `res.write()`. Without `res.flushHeaders()`, the live-traffic client saw
+  nothing until the first real event or the next heartbeat, which
+  `EventSource` reports as a dropped connection, not a slow one.
+
 ## Layout
 
 See blueprint §23 for the full rationale. Summary: `apps/*` are independently
 deployable services (`gateway`, `workers` — BullMQ webhook delivery + log
-indexing, `dashboard` — minimal Vite+React admin UI, `mock-upstream` — a
-dev/test fixture, not a shipped product), `packages/*` is code shared between
-apps (`shared-types`), and `infra/` holds Docker/monitoring config.
+indexing, `dashboard` — a full admin UI (Tailwind v4 + React Router +
+TanStack Query + Recharts), `mock-upstream` — a dev/test fixture, not a
+shipped product), `packages/*` is code shared between apps (`shared-types`),
+and `infra/` holds Docker/monitoring config.
