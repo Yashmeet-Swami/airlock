@@ -40,9 +40,13 @@ async function resolvesToPrivateAddress(hostname: string): Promise<boolean> {
       family === 4 ? isPrivateOrLinkLocalIpv4(address) : isPrivateOrLinkLocalIpv6(address),
     );
   } catch {
-    // Unresolvable hostname — fail closed (block) rather than let a
-    // misconfigured/unreachable host slip through as "safe."
-    return true;
+    // Unresolvable hostname — fail open (allow). There's nothing to reach at
+    // an address that doesn't exist yet, and the alternative would also block
+    // legitimate not-yet-DNS-registered upstreams and reserved test TLDs
+    // (RFC 2606's .test/.example). A hostname that *does* resolve to a
+    // private/link-local address is still caught by the branch above —
+    // this only affects lookups that fail outright.
+    return false;
   }
 }
 

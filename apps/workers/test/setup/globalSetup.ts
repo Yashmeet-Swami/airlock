@@ -157,6 +157,11 @@ export async function setup(): Promise<void> {
   process.env.WEBHOOK_BACKOFF_MS = "50,100,150";
   process.env.WEBHOOK_DELIVERY_TIMEOUT_MS = "2000";
   process.env.LOG_INDEXER_CONCURRENCY ??= "10";
+  // MinIO isn't spun up for the test suite (no test currently exercises
+  // archival) — these just need to satisfy env schema parsing.
+  process.env.MINIO_ENDPOINT ??= "localhost";
+  process.env.MINIO_ACCESS_KEY ??= "test-access-key";
+  process.env.MINIO_SECRET_KEY ??= "test-secret-key";
 
   await Promise.all([waitForPostgres(), waitForRedis(), waitForOpenSearch()]);
   await sleep(1000);

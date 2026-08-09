@@ -3,6 +3,7 @@ import request from "supertest";
 import { createApp } from "../../src/app.js";
 import { resetDatabase } from "../setup/resetDatabase.js";
 import { startEchoServer } from "../setup/echoServer.js";
+import { trustInternalUpstreams } from "../setup/trustTenant.js";
 
 const app = createApp();
 
@@ -18,6 +19,9 @@ describe("GET /metrics (§20.1/§22.1)", () => {
         .post("/auth/register")
         .send({ tenantName: "metrics-co", email: "owner@metrics.test", password: "hunter22222" });
       const accessToken = registerRes.body.accessToken as string;
+      // The echo fixture server below is a real loopback address (127.0.0.1) —
+      // see test/setup/trustTenant.ts for why this is needed.
+      await trustInternalUpstreams(registerRes.body.user.tenantId);
 
       await request(app)
         .post("/admin/routes")
