@@ -121,3 +121,19 @@ export type RequestLogJobData<T extends LogEventName = LogEventName> = T extends
       timestamp: string;
     }
   : never;
+
+/**
+ * §Phase 6 live traffic: published verbatim (JSON.stringify'd) onto Redis
+ * channel `realtime:traffic:{tenantId}` and streamed as-is over SSE — shared
+ * so the gateway's publisher and the dashboard's consumer never drift.
+ */
+export interface TrafficEvent {
+  requestId: string;
+  route: string;
+  method: string | null;
+  statusCode: number | null;
+  latencyMs: number | null;
+  cacheHit: boolean;
+  outcome: "completed" | "failed" | "rate_limited" | "circuit_open";
+  timestamp: string;
+}

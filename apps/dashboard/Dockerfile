@@ -4,6 +4,7 @@ WORKDIR /repo
 
 COPY package.json ./
 COPY tsconfig.base.json ./
+COPY packages ./packages
 COPY apps/dashboard ./apps/dashboard
 
 RUN npm install

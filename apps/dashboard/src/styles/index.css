@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — the dataviz skill's validated default palette
+ * (references/palette.md), wired in as Tailwind v4 @theme tokens so both
+ * plain UI (bg-brand, text-status-critical, ...) and charts draw from the
+ * same source. System sans throughout — no webfont fetch.
+ */
+@theme {
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-brand: #2a78d6;
+  --color-brand-dark: #184f95;
+
+  --color-surface: #fcfcfb;
+  --color-page: #f9f9f7;
+
+  --color-ink: #0b0b0b;
+  --color-ink-secondary: #52514e;
+  --color-ink-muted: #898781;
+
+  --color-border: #e1e0d9;
+
+  --color-status-good: #0ca30c;
+  --color-status-warning: #fab219;
+  --color-status-serious: #ec835a;
+  --color-status-critical: #d03b3b;
+}
+
+body {
+  background-color: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Table cells: numbers that need to line up vertically. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
