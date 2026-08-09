@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Activity, AlertTriangle, KeyRound, Route as RouteIcon } from "lucide-react";
 import { PageHeader } from "../components/layout/index.js";
-import { CHART_COLORS, StatTile, TimeSeriesChart, TopRoutesChart } from "../components/charts/index.js";
+import { StatTile, TimeSeriesChart, TopRoutesChart } from "../components/charts/index.js";
 import { Card, EmptyState, Select, Spinner } from "../components/ui/index.js";
 import { useAggregateOverTime, useAggregateTopRoutes } from "../api/analytics.js";
 import { useRoutes } from "../api/routes.js";
@@ -77,13 +77,13 @@ export function OverviewPage() {
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartSlot loading={seriesQuery.isLoading} empty={requestsData.length === 0}>
-          <TimeSeriesChart title="Requests over time" data={requestsData} color={CHART_COLORS.brand} variant="area" />
+          <TimeSeriesChart title="Requests over time" data={requestsData} color="brand" variant="area" />
         </ChartSlot>
         <ChartSlot loading={seriesQuery.isLoading} empty={errorRateData.length === 0}>
           <TimeSeriesChart
             title="Error rate over time"
             data={errorRateData}
-            color={CHART_COLORS.error}
+            color="error"
             variant="line"
             valueFormatter={(v) => `${v}%`}
           />

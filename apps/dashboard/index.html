@@ -3,6 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <title>Airlock Dashboard</title>
+    <script>
+      // Blocking, runs before React mounts — avoids a flash of the wrong
+      // theme on load. Mirrors the resolution logic in src/lib/theme.tsx.
+      (function () {
+        var stored = localStorage.getItem("airlock.theme");
+        var isDark = stored === "dark" || (stored !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (isDark) document.documentElement.classList.add("dark");
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

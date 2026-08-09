@@ -1,6 +1,7 @@
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card } from "../ui/Card.js";
-import { CHART_COLORS } from "./chartColors.js";
+import { getChartColors } from "./chartColors.js";
+import { useTheme } from "../../lib/theme.js";
 
 export interface TimeSeriesPoint {
   bucket: string;
@@ -19,11 +20,21 @@ export function TimeSeriesChart({
 }: {
   title: string;
   data: TimeSeriesPoint[];
-  color: string;
+  color: "brand" | "error";
   variant?: "area" | "line";
   valueFormatter?: (value: number) => string;
 }) {
+  const { resolvedTheme } = useTheme();
+  const colors = getChartColors(resolvedTheme === "dark");
+  const strokeColor = colors[color];
   const gradientId = `fill-${title.replace(/\s+/g, "-")}`;
+  const tooltipStyle = {
+    borderRadius: 8,
+    border: `1px solid ${colors.grid}`,
+    background: colors.surface,
+    color: colors.ink,
+    fontSize: 13,
+  };
 
   return (
     <Card>
@@ -34,41 +45,35 @@ export function TimeSeriesChart({
             <AreaChart data={data} margin={{ left: -20, right: 8, top: 8, bottom: 0 }}>
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={color} stopOpacity={0.25} />
-                  <stop offset="95%" stopColor={color} stopOpacity={0} />
+                  <stop offset="5%" stopColor={strokeColor} stopOpacity={0.25} />
+                  <stop offset="95%" stopColor={strokeColor} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid stroke={CHART_COLORS.grid} vertical={false} />
-              <XAxis dataKey="bucket" stroke={CHART_COLORS.axis} fontSize={12} tickLine={false} axisLine={false} />
+              <CartesianGrid stroke={colors.grid} vertical={false} />
+              <XAxis dataKey="bucket" stroke={colors.axis} fontSize={12} tickLine={false} axisLine={false} />
               <YAxis
-                stroke={CHART_COLORS.axis}
+                stroke={colors.axis}
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={valueFormatter}
               />
-              <Tooltip
-                formatter={(value) => valueFormatter(Number(value))}
-                contentStyle={{ borderRadius: 8, border: `1px solid ${CHART_COLORS.grid}`, fontSize: 13 }}
-              />
-              <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#${gradientId})`} />
+              <Tooltip formatter={(value) => valueFormatter(Number(value))} contentStyle={tooltipStyle} />
+              <Area type="monotone" dataKey="value" stroke={strokeColor} strokeWidth={2} fill={`url(#${gradientId})`} />
             </AreaChart>
           ) : (
             <LineChart data={data} margin={{ left: -20, right: 8, top: 8, bottom: 0 }}>
-              <CartesianGrid stroke={CHART_COLORS.grid} vertical={false} />
-              <XAxis dataKey="bucket" stroke={CHART_COLORS.axis} fontSize={12} tickLine={false} axisLine={false} />
+              <CartesianGrid stroke={colors.grid} vertical={false} />
+              <XAxis dataKey="bucket" stroke={colors.axis} fontSize={12} tickLine={false} axisLine={false} />
               <YAxis
-                stroke={CHART_COLORS.axis}
+                stroke={colors.axis}
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={valueFormatter}
               />
-              <Tooltip
-                formatter={(value) => valueFormatter(Number(value))}
-                contentStyle={{ borderRadius: 8, border: `1px solid ${CHART_COLORS.grid}`, fontSize: 13 }}
-              />
-              <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={false} />
+              <Tooltip formatter={(value) => valueFormatter(Number(value))} contentStyle={tooltipStyle} />
+              <Line type="monotone" dataKey="value" stroke={strokeColor} strokeWidth={2} dot={false} />
             </LineChart>
           )}
         </ResponsiveContainer>

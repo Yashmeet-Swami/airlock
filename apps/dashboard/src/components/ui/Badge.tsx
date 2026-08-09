@@ -8,8 +8,11 @@ export type StatusTone = "good" | "warning" | "serious" | "critical" | "neutral"
 // both an icon and a text label (dataviz skill non-negotiable).
 const TONE_CLASSES: Record<StatusTone, string> = {
   good: "bg-status-good/10 text-status-good",
-  warning: "bg-status-warning/15 text-[#8a6200]",
-  serious: "bg-status-serious/15 text-[#9c3d1d]",
+  // The custom hex is tuned for ≥4.5:1 on the *light* surface — the base
+  // status hue itself only clears 1.79:1 there. On the dark surface the base
+  // hue already clears ≥6.6:1 (references/palette.md), so it's used directly.
+  warning: "bg-status-warning/15 text-[#8a6200] dark:text-status-warning",
+  serious: "bg-status-serious/15 text-[#9c3d1d] dark:text-status-serious",
   critical: "bg-status-critical/10 text-status-critical",
   neutral: "bg-ink-muted/10 text-ink-secondary",
 };

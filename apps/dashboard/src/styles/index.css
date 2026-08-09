@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (not just prefers-color-scheme) so a manual toggle
+ * can override the OS setting — see lib/theme.tsx. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
  * Design tokens — the dataviz skill's validated default palette
  * (references/palette.md), wired in as Tailwind v4 @theme tokens so both
@@ -28,10 +32,27 @@
   --color-status-critical: #d03b3b;
 }
 
+/* Same tokens, restepped for the dark surface (references/palette.md's dark
+ * column) — status colors are unchanged, already validated ≥3:1 there. */
+.dark {
+  --color-brand: #3987e5;
+  --color-brand-dark: #184f95;
+
+  --color-surface: #1a1a19;
+  --color-page: #0d0d0d;
+
+  --color-ink: #ffffff;
+  --color-ink-secondary: #c3c2b7;
+  --color-ink-muted: #898781;
+
+  --color-border: rgba(255, 255, 255, 0.1);
+}
+
 body {
   background-color: var(--color-page);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 /* Table cells: numbers that need to line up vertically. */
