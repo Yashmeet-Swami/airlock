@@ -3,6 +3,7 @@ import type { TrafficEvent } from "@airlock/shared-types";
 import { PageHeader } from "../components/layout/index.js";
 import { Badge, EmptyState, TBody, TD, TH, THead, TR, Table, type StatusTone } from "../components/ui/index.js";
 import { useAuth } from "../lib/auth.js";
+import { API_PREFIX } from "../lib/apiClient.js";
 
 const MAX_EVENTS = 100;
 
@@ -22,7 +23,7 @@ export function LiveTrafficPage() {
 
   useEffect(() => {
     if (!accessToken) return;
-    const source = new EventSource(`/realtime/traffic?token=${encodeURIComponent(accessToken)}`);
+    const source = new EventSource(`${API_PREFIX}/realtime/traffic?token=${encodeURIComponent(accessToken)}`);
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
     source.onmessage = (e: MessageEvent<string>) => {

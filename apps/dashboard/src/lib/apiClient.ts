@@ -1,5 +1,11 @@
 import { clearTokens, getAccessToken, getRefreshToken, setTokens, type TokenPair } from "./tokenStore.js";
 
+// Every backend call goes through this prefix (see vite.config.ts's proxy —
+// stripped before forwarding to the gateway). Deliberately not proxying bare
+// paths like "/logs" directly: that collides with the dashboard's own
+// client-side route of the same name, breaking a page refresh/deep link.
+export const API_PREFIX = "/api";
+
 export class ApiError extends Error {
   status: number;
 
@@ -23,7 +29,7 @@ async function refreshAccessToken(): Promise<boolean> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return false;
 
-  refreshPromise ??= fetch("/auth/refresh", {
+  refreshPromise ??= fetch(`${API_PREFIX}/auth/refresh`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ refreshToken }),
@@ -66,7 +72,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}, is
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (accessToken) headers.authorization = `Bearer ${accessToken}`;
 
-  const res = await fetch(url.pathname + url.search, {
+  const res = await fetch(API_PREFIX + url.pathname + url.search, {
     method: options.method ?? "GET",
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,

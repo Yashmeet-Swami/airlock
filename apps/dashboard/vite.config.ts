@@ -13,12 +13,16 @@ export default defineConfig({
     host: true,
     port: 5173,
     proxy: {
-      "/auth": apiProxyTarget,
-      "/logs": apiProxyTarget,
-      "/admin": apiProxyTarget,
-      "/analytics": apiProxyTarget,
-      // SSE — needs to stay unbuffered; Vite's proxy streams by default.
-      "/realtime": apiProxyTarget,
+      // Every backend call goes through this single /api prefix (stripped
+      // before forwarding) — deliberately not proxying bare paths like
+      // "/logs" directly: that collides with the dashboard's own client-side
+      // route of the same name, so a full-page refresh or deep link on the
+      // Log Explorer page would hit the proxy instead of the SPA and 404.
+      "/api": {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
     },
   },
 });
