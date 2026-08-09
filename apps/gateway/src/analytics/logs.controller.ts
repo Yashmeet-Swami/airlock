@@ -66,6 +66,8 @@ logsRouter.get("/search", requireJwtOrScope("read:logs"), async (req, res) => {
 const aggregateQuerySchema = z.object({
   groupBy: z.enum(["route"]).optional(),
   window: z.string().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
 });
 
 // Cross-tenant "top tenants" analytics is out of scope (no platform-operator
@@ -76,8 +78,11 @@ logsRouter.get("/aggregate", requireJwtOrScope("read:logs"), async (req, res) =>
     res.status(400).json({ error: "validation_error", details: parsed.error.flatten() });
     return;
   }
-  const { groupBy, window } = parsed.data;
-  const tenantFilter = { term: { tenant_id: req.auth!.tenantId } };
+  const { groupBy, window, from, to } = parsed.data;
+  const filter: Record<string, unknown>[] = [{ term: { tenant_id: req.auth!.tenantId } }];
+  if (from || to) {
+    filter.push({ range: { timestamp: { ...(from && { gte: from }), ...(to && { lte: to }) } } });
+  }
   // An "error" is either a real 5xx from the upstream (request.completed) or a
   // gateway-level failure that never got a status code at all (request.failed
   // carries null status_code — the 502/504 the client sees is synthesized by
@@ -91,7 +96,7 @@ logsRouter.get("/aggregate", requireJwtOrScope("read:logs"), async (req, res) =>
     const response = await openSearchClient.search({
       index: REQUESTS_INDEX_PATTERN,
       body: {
-        query: { bool: { filter: [tenantFilter] } },
+        query: { bool: { filter } },
         size: 0,
         aggs: {
           over_time: {
@@ -124,7 +129,7 @@ logsRouter.get("/aggregate", requireJwtOrScope("read:logs"), async (req, res) =>
   const response = await openSearchClient.search({
     index: REQUESTS_INDEX_PATTERN,
     body: {
-      query: { bool: { filter: [tenantFilter] } },
+      query: { bool: { filter } },
       size: 0,
       aggs: {
         by_route: {

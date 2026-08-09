@@ -76,6 +76,7 @@ export function LogExplorerPage() {
   const total = data?.total ?? 0;
   const page = submitted.page ?? 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasActiveFilters = Boolean(submitted.q || submitted.route || submitted.status_code);
 
   return (
     <div>
@@ -93,13 +94,13 @@ export function LogExplorerPage() {
       <Card className="mb-6">
         <form onSubmit={handleSearch} className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Field label="Search">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="error message / user agent" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. error message or user agent" />
           </Field>
           <Field label="Route">
-            <Input value={route} onChange={(e) => setRoute(e.target.value)} placeholder="/v1/payments" />
+            <Input value={route} onChange={(e) => setRoute(e.target.value)} placeholder="e.g. /v1/payments" />
           </Field>
           <Field label="Status code">
-            <Input value={statusCode} onChange={(e) => setStatusCode(e.target.value)} placeholder="500" />
+            <Input value={statusCode} onChange={(e) => setStatusCode(e.target.value)} placeholder="e.g. 500" />
           </Field>
           <div className="flex items-end">
             <Button type="submit" className="w-full">
@@ -120,6 +121,7 @@ export function LogExplorerPage() {
         <>
           <p className="mb-3 text-sm text-ink-muted">
             {total} result{total === 1 ? "" : "s"}
+            {!hasActiveFilters && " — no filters applied, showing everything"}
             {isFetching && " — updating..."}
           </p>
           <Table>

@@ -18,8 +18,10 @@ export function StatTile({
       {Icon && (
         <div
           className={clsx(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-md",
-            tone === "critical" ? "bg-status-critical/10 text-status-critical" : "bg-brand/10 text-brand",
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-linear-to-br",
+            tone === "critical"
+              ? "from-status-critical/20 to-transparent text-status-critical"
+              : "from-brand/20 to-transparent text-brand",
           )}
         >
           <Icon size={18} />

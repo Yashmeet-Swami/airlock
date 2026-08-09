@@ -22,17 +22,19 @@ export interface AggregateRoutesResponse {
   routes: AggregateRouteRow[];
 }
 
-export function useAggregateOverTime(window: string) {
+export function useAggregateOverTime(window: string, from?: string, refetchInterval?: number | false) {
   return useQuery({
-    queryKey: ["analyticsAggregate", "window", window],
-    queryFn: () => apiFetch<AggregateSeriesResponse>("/logs/aggregate", { query: { window } }),
+    queryKey: ["analyticsAggregate", "window", window, from],
+    queryFn: () => apiFetch<AggregateSeriesResponse>("/logs/aggregate", { query: { window, from } }),
+    refetchInterval,
   });
 }
 
-export function useAggregateTopRoutes() {
+export function useAggregateTopRoutes(from?: string, refetchInterval?: number | false) {
   return useQuery({
-    queryKey: ["analyticsAggregate", "routes"],
-    queryFn: () => apiFetch<AggregateRoutesResponse>("/logs/aggregate"),
+    queryKey: ["analyticsAggregate", "routes", from],
+    queryFn: () => apiFetch<AggregateRoutesResponse>("/logs/aggregate", { query: { from } }),
+    refetchInterval,
   });
 }
 

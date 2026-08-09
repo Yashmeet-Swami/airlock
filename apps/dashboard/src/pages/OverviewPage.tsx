@@ -1,16 +1,32 @@
 import { useState, type ReactNode } from "react";
-import { Activity, AlertTriangle, KeyRound, Route as RouteIcon } from "lucide-react";
+import clsx from "clsx";
+import { Activity, AlertTriangle, KeyRound, RefreshCw, Route as RouteIcon, Zap } from "lucide-react";
 import { PageHeader } from "../components/layout/index.js";
 import { StatTile, TimeSeriesChart, TopRoutesChart } from "../components/charts/index.js";
-import { Card, EmptyState, Select, Spinner } from "../components/ui/index.js";
+import { Button, Card, EmptyState, Spinner } from "../components/ui/index.js";
 import { useAggregateOverTime, useAggregateTopRoutes } from "../api/analytics.js";
 import { useRoutes } from "../api/routes.js";
 import { useApiKeys } from "../api/apiKeys.js";
 
-const WINDOW_OPTIONS = [
-  { value: "1h", label: "Hourly buckets" },
-  { value: "1d", label: "Daily buckets" },
+interface RangePreset {
+  key: string;
+  label: string;
+  window: string;
+  hoursAgo: number;
+}
+
+// Each range picks its own bucket size — a 30-day view bucketed by 5 minutes
+// would be unreadable, so granularity is derived from the range, not chosen
+// independently (previously the only control here was raw bucket size, which
+// meant "hourly buckets" silently covered the tenant's *entire* history).
+const RANGE_PRESETS: RangePreset[] = [
+  { key: "1h", label: "1H", window: "5m", hoursAgo: 1 },
+  { key: "24h", label: "24H", window: "1h", hoursAgo: 24 },
+  { key: "7d", label: "7D", window: "6h", hoursAgo: 24 * 7 },
+  { key: "30d", label: "30D", window: "1d", hoursAgo: 24 * 30 },
 ];
+
+const AUTO_REFRESH_MS = 15_000;
 
 function ChartSlot({ loading, empty, children }: { loading: boolean; empty: boolean; children: ReactNode }) {
   if (loading) {
@@ -31,9 +47,15 @@ function ChartSlot({ loading, empty, children }: { loading: boolean; empty: bool
 }
 
 export function OverviewPage() {
-  const [window, setWindow] = useState("1h");
-  const seriesQuery = useAggregateOverTime(window);
-  const routesAggQuery = useAggregateTopRoutes();
+  const [rangeKey, setRangeKey] = useState("24h");
+  const [autoRefresh, setAutoRefresh] = useState(false);
+
+  const preset = RANGE_PRESETS.find((p) => p.key === rangeKey) ?? RANGE_PRESETS[1]!;
+  const from = new Date(Date.now() - preset.hoursAgo * 60 * 60 * 1000).toISOString();
+  const refetchInterval = autoRefresh ? AUTO_REFRESH_MS : false;
+
+  const seriesQuery = useAggregateOverTime(preset.window, from, refetchInterval);
+  const routesAggQuery = useAggregateTopRoutes(from, refetchInterval);
   const routesQuery = useRoutes();
   const apiKeysQuery = useApiKeys();
 
@@ -47,19 +69,43 @@ export function OverviewPage() {
   const topRoutes = (routesAggQuery.data?.routes ?? []).slice(0, 10).map((r) => ({ route: r.route, count: r.count }));
   const activeApiKeys = (apiKeysQuery.data ?? []).filter((k) => k.revokedAt === null).length;
 
+  function handleRefresh() {
+    void seriesQuery.refetch();
+    void routesAggQuery.refetch();
+  }
+
   return (
     <div>
       <PageHeader
         title="Overview"
         description="Traffic and error trends across your tenant."
         action={
-          <Select value={window} onChange={(e) => setWindow(e.target.value)} className="w-48">
-            {WINDOW_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-md border border-border p-0.5">
+              {RANGE_PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => setRangeKey(p.key)}
+                  className={clsx(
+                    "rounded px-3 py-1.5 text-sm font-medium transition-colors",
+                    p.key === rangeKey ? "bg-brand text-white" : "text-ink-secondary hover:bg-page",
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <Button
+              variant={autoRefresh ? "primary" : "secondary"}
+              onClick={() => setAutoRefresh((v) => !v)}
+              title={autoRefresh ? "Auto-refresh on (every 15s)" : "Auto-refresh off"}
+            >
+              <Zap size={16} />
+            </Button>
+            <Button variant="secondary" onClick={handleRefresh} title="Refresh now">
+              <RefreshCw size={16} />
+            </Button>
+          </div>
         }
       />
 
