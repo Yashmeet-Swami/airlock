@@ -30,6 +30,13 @@ realtimeRouter.get("/traffic", async (req, res) => {
     "cache-control": "no-cache",
     connection: "keep-alive",
   });
+  // writeHead alone doesn't push headers onto the socket — Node buffers them
+  // until the first res.write()/res.end(). Without an explicit flush (or an
+  // immediate write), the client sees nothing at all until the first pub/sub
+  // message or the next heartbeat, which is 20s away — EventSource reports
+  // that as a dropped/failed connection, not a slow-but-open one.
+  res.flushHeaders();
+  res.write(": connected\n\n");
 
   // A dedicated connection: once an ioredis client issues SUBSCRIBE it can
   // only run pub/sub commands, so it can't be the shared client used elsewhere.
