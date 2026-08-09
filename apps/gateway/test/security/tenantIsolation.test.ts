@@ -118,8 +118,30 @@ describe("tenant isolation (§24.7 security regression suite)", () => {
 });
 
 describe("SSRF hardening (§21.3)", () => {
-  it("rejects a route pointing at a private/link-local upstream for an unflagged tenant", async () => {
-    const { accessToken } = await registerOwner("ssrf-blocked");
+  // Opt-out by default (Phase 6 scope revision): Airlock is self-hosted, so
+  // pointing a route at a co-located service (a private IP, or a Docker
+  // Compose service name that resolves to one) is the normal case, not the
+  // exception — new tenants start with allowInternalUpstreams: true.
+  it("allows a private/link-local upstream by default for a newly registered tenant", async () => {
+    const { accessToken } = await registerOwner("ssrf-allowed-default");
+
+    const res = await request(app)
+      .post("/admin/routes")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ pathPattern: "/internal", upstreamUrl: "http://169.254.169.254/latest", methods: ["GET"] });
+
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects a private/link-local upstream once the tenant's owner opts out", async () => {
+    const { accessToken, tenantId } = await registerOwner("ssrf-opted-out");
+
+    const flagRes = await request(app)
+      .patch(`/admin/tenants/${tenantId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ allowInternalUpstreams: false });
+    expect(flagRes.status).toBe(200);
+    expect(flagRes.body.allowInternalUpstreams).toBe(false);
 
     const res = await request(app)
       .post("/admin/routes")
@@ -130,8 +152,13 @@ describe("SSRF hardening (§21.3)", () => {
     expect(res.body.error).toBe("upstream_not_allowed");
   });
 
-  it("rejects a loopback upstream on PATCH too", async () => {
-    const { accessToken } = await registerOwner("ssrf-patch-blocked");
+  it("rejects a loopback upstream on PATCH too, once opted out", async () => {
+    const { accessToken, tenantId } = await registerOwner("ssrf-patch-blocked");
+    await request(app)
+      .patch(`/admin/tenants/${tenantId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ allowInternalUpstreams: false });
+
     const created = await request(app)
       .post("/admin/routes")
       .set("Authorization", `Bearer ${accessToken}`)
@@ -156,25 +183,8 @@ describe("SSRF hardening (§21.3)", () => {
     const patchRes = await request(app)
       .patch(`/admin/tenants/${owner.tenantId}`)
       .set("Authorization", `Bearer ${loginRes.body.accessToken}`)
-      .send({ allowInternalUpstreams: true });
+      .send({ allowInternalUpstreams: false });
 
     expect(patchRes.status).toBe(403);
-  });
-
-  it("allows a private upstream once the tenant is flagged as trusted by its owner", async () => {
-    const { accessToken, tenantId } = await registerOwner("ssrf-allowed");
-
-    const flagRes = await request(app)
-      .patch(`/admin/tenants/${tenantId}`)
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({ allowInternalUpstreams: true });
-    expect(flagRes.status).toBe(200);
-    expect(flagRes.body.allowInternalUpstreams).toBe(true);
-
-    const routeRes = await request(app)
-      .post("/admin/routes")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({ pathPattern: "/internal", upstreamUrl: "http://169.254.169.254/latest", methods: ["GET"] });
-    expect(routeRes.status).toBe(201);
   });
 });

@@ -69,10 +69,13 @@ traffic; `POST /analytics/export` runs the same filters as `/logs/search`,
 formats matching hits as CSV/NDJSON, and returns a presigned MinIO URL;
 `GET /realtime/traffic` streams live proxied-request events over SSE
 (auth via `?token=`, since `EventSource` can't set headers) and the dashboard
-gained a Live Traffic page; and routes are now checked against a
-private/link-local/loopback IP blocklist unless the owning tenant has
-explicitly opted in via `tenants.allow_internal_upstreams` (owner-only,
-`PATCH /admin/tenants/:id`).
+gained a Live Traffic page; and routes are checked against a
+private/link-local/loopback IP blocklist, opt-out per tenant via
+`tenants.allow_internal_upstreams` (owner-only, `PATCH /admin/tenants/:id`;
+defaults to allowed, since Airlock is self-hosted and pointing a route at a
+co-located service — e.g. the `mock-upstream` fixture over the Docker Compose
+network — is the normal case, not the exception; tenants wanting the
+stricter SaaS-style posture can opt out).
 
 **A note on the dashboard.** Airlock is intentionally backend-first: each
 backend phase gets only the bare-minimum UI needed to verify/manage what it

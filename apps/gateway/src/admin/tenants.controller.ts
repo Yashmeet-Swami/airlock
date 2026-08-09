@@ -10,7 +10,8 @@ export const tenantsRouter = Router();
 
 const updateTenantSchema = z.object({
   name: z.string().min(2).max(100).optional(),
-  // §21.3: an explicit opt-in to point routes at private/internal upstreams —
+  // §21.3: defaults to true (self-hosted — pointing at a co-located service
+  // is normal). Lets an owner opt OUT to the stricter SaaS-style posture —
   // owner-only even though the route itself only requires "admin" (see below).
   allowInternalUpstreams: z.boolean().optional(),
 });

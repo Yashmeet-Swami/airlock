@@ -3,7 +3,6 @@ import request from "supertest";
 import { createApp } from "../../src/app.js";
 import { resetDatabase } from "../setup/resetDatabase.js";
 import { startEchoServer } from "../setup/echoServer.js";
-import { trustInternalUpstreams } from "../setup/trustTenant.js";
 
 const app = createApp();
 
@@ -15,9 +14,6 @@ async function registerOwner() {
   const res = await request(app)
     .post("/auth/register")
     .send({ tenantName: "acme-corp", email: "owner@acme.test", password: "hunter22222" });
-  // The echo fixture server below is a real loopback address (127.0.0.1) —
-  // see test/setup/trustTenant.ts for why this is needed.
-  await trustInternalUpstreams(res.body.user.tenantId);
   return res.body.accessToken as string;
 }
 

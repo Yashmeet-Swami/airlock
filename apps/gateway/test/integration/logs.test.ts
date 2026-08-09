@@ -4,7 +4,6 @@ import { createApp } from "../../src/app.js";
 import { resetDatabase } from "../setup/resetDatabase.js";
 import { seedLogDocument } from "../setup/opensearchSeed.js";
 import { startEchoServer } from "../setup/echoServer.js";
-import { trustInternalUpstreams } from "../setup/trustTenant.js";
 import { requestsQueue } from "../../src/events/requestLogger.js";
 
 const app = createApp();
@@ -21,9 +20,6 @@ async function registerOwner(tenantName = "acme-corp", email = "owner@acme.test"
   const res = await request(app)
     .post("/auth/register")
     .send({ tenantName, email, password: "hunter22222" });
-  // One test below points a route at a real loopback echo server —
-  // see test/setup/trustTenant.ts for why this is needed.
-  await trustInternalUpstreams(res.body.user.tenantId);
   return { accessToken: res.body.accessToken as string, tenantId: res.body.user.tenantId as string };
 }
 
