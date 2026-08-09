@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Self-hosted, multi-tenant API Gateway & Developer Platform",
+  "license": "MIT",
   "workspaces": [
     "apps/*",
     "packages/*"

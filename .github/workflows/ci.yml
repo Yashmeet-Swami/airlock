@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Type-check every workspace
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        # gateway/workers each spin up their own throwaway Postgres/Redis/OpenSearch
+        # containers via `docker run` (see apps/gateway/test/setup/globalSetup.ts) —
+        # ubuntu-latest runners ship Docker pre-installed, so no extra services needed.
+        run: npm test

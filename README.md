@@ -1,8 +1,14 @@
 # Airlock
 
-A self-hosted, multi-tenant API Gateway & Developer Platform. See
-[`docs/AIRLOCK_PROJECT_BLUEPRINT.md`](docs/AIRLOCK_PROJECT_BLUEPRINT.md) for the
-full design doc, architecture, and phase-by-phase roadmap.
+[![CI](https://github.com/Yashmeet-Swami/airlock/actions/workflows/ci.yml/badge.svg)](https://github.com/Yashmeet-Swami/airlock/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+A self-hosted, multi-tenant API Gateway & Developer Platform: reverse proxy
+routing, JWT + API-key auth, Redis-backed rate limiting/caching, async
+webhooks (BullMQ), OpenSearch-powered log search/analytics, a per-upstream
+circuit breaker, Prometheus/Grafana observability, and MinIO-backed request
+archival/replay + exports — built in six incremental, independently
+tested/committed phases (see Status below).
 
 ## Status
 
