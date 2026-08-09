@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { Activity, AlertTriangle, KeyRound, RefreshCw, Route as RouteIcon, Zap } from "lucide-react";
 import { PageHeader } from "../components/layout/index.js";
@@ -51,7 +51,17 @@ export function OverviewPage() {
   const [autoRefresh, setAutoRefresh] = useState(false);
 
   const preset = RANGE_PRESETS.find((p) => p.key === rangeKey) ?? RANGE_PRESETS[1]!;
-  const from = new Date(Date.now() - preset.hoursAgo * 60 * 60 * 1000).toISOString();
+  // Computed fresh on every render (Date.now()) would otherwise change the
+  // query key by a few milliseconds each time, so React Query never sees a
+  // stable key to settle on — an unintentional infinite refetch loop that
+  // looks like "stuck loading" with stale zeroed-out stat tiles. Recompute
+  // only when the selected range actually changes; the manual refresh button
+  // and auto-refresh interval both re-fetch the *existing* query directly,
+  // they don't need a new `from` to do that.
+  const from = useMemo(
+    () => new Date(Date.now() - preset.hoursAgo * 60 * 60 * 1000).toISOString(),
+    [preset.hoursAgo],
+  );
   const refetchInterval = autoRefresh ? AUTO_REFRESH_MS : false;
 
   const seriesQuery = useAggregateOverTime(preset.window, from, refetchInterval);
