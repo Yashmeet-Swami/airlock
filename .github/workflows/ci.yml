@@ -17,11 +17,13 @@ jobs:
           node-version: "22"
           cache: "npm"
 
-      # npm ci fails here with "Cannot find module @rollup/rollup-linux-x64-gnu"
-      # (npm/cli#4828 — optional-dependency resolution breaks when the lockfile
-      # was generated on a different OS than the CI runner). npm install
-      # re-resolves platform-specific optional deps correctly.
-      - run: npm install
+      # package-lock.json was generated on Windows, and per npm/cli#4828 a
+      # cross-platform lockfile can simply omit the Linux-specific optional
+      # binary (@rollup/rollup-linux-x64-gnu) entirely — so even `npm install`
+      # against the committed lockfile can't resolve it. Dropping the lockfile
+      # for this CI-only install forces a fresh, platform-correct resolution;
+      # it never touches the committed file.
+      - run: rm -f package-lock.json && npm install
 
       - name: Type-check every workspace
         run: npm run build
