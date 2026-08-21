@@ -2,7 +2,7 @@ name: Warm Sitemap Cache
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '*/20 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,12 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Request sitemap (1st)
-        run: curl --fail --show-error --silent --max-time 120 https://ozi.in/sitemap-products.xml -o /dev/null
-        continue-on-error: true
+        run: |
+          curl --fail --show-error --silent --max-time 120 \
+               --retry 3 --retry-delay 15 --retry-all-errors \
+               -w "HTTP %{http_code}  time %{time_total}s\n" \
+               https://ozi.in/sitemap-products.xml -o /dev/null
 
       - name: Wait 5 seconds
         run: sleep 5
 
       - name: Request sitemap (2nd)
-        run: curl --fail --show-error --silent --max-time 120 https://ozi.in/sitemap-products.xml -o /dev/null
-        continue-on-error: true
+        run: |
+          curl --fail --show-error --silent --max-time 120 \
+               --retry 3 --retry-delay 15 --retry-all-errors \
+               -w "HTTP %{http_code}  time %{time_total}s\n" \
+               https://ozi.in/sitemap-products.xml -o /dev/null
